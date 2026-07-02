@@ -278,6 +278,76 @@ class CatalogStore:
             ).fetchall()
         return [r["category"] for r in rows]
 
+    def admin_summary(self) -> Dict[str, Any]:
+        """Aggregate catalog/order metrics for the backoffice dashboard."""
+        with self._connect() as conn:
+            counts = {}
+            for table in (
+                "products",
+                "skus",
+                "customers",
+                "orders",
+                "coupons",
+                "return_requests",
+            ):
+                row = conn.execute(f"SELECT COUNT(*) AS c FROM {table}").fetchone()
+                counts[table] = int(row["c"])
+
+            active_products = conn.execute(
+                "SELECT COUNT(*) AS c FROM products WHERE status = 'active'"
+            ).fetchone()
+            stock = conn.execute(
+                "SELECT COALESCE(SUM(stock), 0) AS total_stock FROM skus WHERE status = 'active'"
+            ).fetchone()
+            low_stock = conn.execute(
+                "SELECT COUNT(*) AS c FROM skus WHERE status = 'active' AND stock BETWEEN 1 AND 10"
+            ).fetchone()
+            revenue = conn.execute(
+                "SELECT COALESCE(SUM(total), 0) AS total FROM orders WHERE status != 'pending_payment'"
+            ).fetchone()
+            status_rows = conn.execute(
+                "SELECT status, COUNT(*) AS c FROM orders GROUP BY status ORDER BY status"
+            ).fetchall()
+            category_rows = conn.execute(
+                """SELECT category, COUNT(*) AS c
+                   FROM products WHERE status = 'active'
+                   GROUP BY category ORDER BY c DESC, category ASC"""
+            ).fetchall()
+
+        return {
+            **counts,
+            "active_products": int(active_products["c"]),
+            "total_stock": int(stock["total_stock"]),
+            "low_stock_skus": int(low_stock["c"]),
+            "revenue": float(revenue["total"]),
+            "orders_by_status": {r["status"]: int(r["c"]) for r in status_rows},
+            "categories": [{"category": r["category"], "count": int(r["c"])} for r in category_rows],
+        }
+
+    def list_products_for_admin(self, limit: int = 100) -> List[Dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT p.*,
+                       COUNT(s.sku_id) AS sku_count,
+                       COALESCE(SUM(s.stock), 0) AS stock_total
+                FROM products p
+                LEFT JOIN skus s ON s.product_id = p.product_id
+                GROUP BY p.product_id
+                ORDER BY p.created_at DESC, p.product_id ASC
+                LIMIT ?
+                """,
+                (max(1, min(int(limit), 500)),),
+            ).fetchall()
+        products = []
+        for row in rows:
+            product = self._product_row(row)
+            product["sku_count"] = int(row["sku_count"])
+            product["stock_total"] = int(row["stock_total"])
+            product["in_stock"] = int(row["stock_total"]) > 0
+            products.append(product)
+        return products
+
     def get_product(self, product_id: str) -> Optional[Dict[str, Any]]:
         with self._connect() as conn:
             row = conn.execute(

@@ -9,13 +9,14 @@ from contextlib import asynccontextmanager
 import json
 import uuid
 
-from fastapi import FastAPI, HTTPException, Request, Depends
+from fastapi import FastAPI, HTTPException, Request, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, ConfigDict
 import logging
 
 from .config import get_model_config, get_app_config
+from .admin_store import AdminStore
 from .models.universal_chat import UniversalChat
 from .agents.graph import create_chat_graph
 from .session_store import get_session_store
@@ -59,13 +60,14 @@ tool_registry = None
 tool_planner = None
 tool_executor = None
 prompt_builder = None
+admin_store: Optional[AdminStore] = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
     global model_client, chat_graph, session_store, pahf_memory_service
-    global tool_registry, tool_planner, tool_executor, prompt_builder
+    global tool_registry, tool_planner, tool_executor, prompt_builder, admin_store
     
     logger.info("Starting application...")
     
@@ -146,12 +148,20 @@ async def lifespan(app: FastAPI):
         notify_webhook=app_config.NOTIFY_WEBHOOK_URL,
     )
     feedback_store = FeedbackStore(db_path=app_config.FEEDBACK_DB_PATH)
+    if admin_store is None:
+        admin_store = AdminStore(
+            db_path=app_config.ADMIN_DB_PATH,
+            default_username=app_config.ADMIN_DEFAULT_USERNAME,
+            default_password=app_config.ADMIN_DEFAULT_PASSWORD,
+            session_ttl_seconds=app_config.ADMIN_SESSION_TTL_SECONDS,
+        )
     RT.chat_service = chat_service
     RT.event_bus = event_bus
     RT.catalog_store = catalog_store
     RT.conversation_store = conversation_store
     RT.feedback_store = feedback_store
     logger.info("Initialized realtime + HITL subsystem")
+    logger.info("Initialized admin auth subsystem")
 
     yield
     if pahf_memory_service is not None:
@@ -216,6 +226,27 @@ class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, description="User message")
     temperature: Optional[float] = Field(None, ge=0.0, le=2.0, description="Sampling temperature")
     max_tokens: Optional[int] = Field(None, ge=1, le=4096, description="Maximum tokens to generate")
+
+
+class AdminLoginRequest(BaseModel):
+    """Admin login payload."""
+    username: str = Field(..., min_length=1, max_length=80)
+    password: str = Field(..., min_length=1, max_length=200)
+
+
+class AdminUserResponse(BaseModel):
+    username: str
+    role: str
+    display_name: str
+    created_at: float
+    last_login_at: Optional[float] = None
+
+
+class AdminLoginResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_at: float
+    user: AdminUserResponse
 
 
 class ChatResponse(BaseModel):
@@ -351,6 +382,48 @@ def _render_recent_history(messages: list[OpenAIChatMessage], keep: int = 8) -> 
     return "\n".join(rendered).strip()
 
 
+def _get_admin_store() -> AdminStore:
+    global admin_store
+    if admin_store is None:
+        admin_store = AdminStore(
+            db_path=app_config.ADMIN_DB_PATH,
+            default_username=app_config.ADMIN_DEFAULT_USERNAME,
+            default_password=app_config.ADMIN_DEFAULT_PASSWORD,
+            session_ttl_seconds=app_config.ADMIN_SESSION_TTL_SECONDS,
+        )
+    return admin_store
+
+
+def _extract_bearer_token(authorization: Optional[str]) -> str:
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Missing Authorization header")
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not token.strip():
+        raise HTTPException(status_code=401, detail="Invalid Authorization header")
+    return token.strip()
+
+
+def _require_admin_token(authorization: Optional[str] = Header(default=None)) -> str:
+    return _extract_bearer_token(authorization)
+
+
+def _require_admin(token: str = Depends(_require_admin_token)) -> dict:
+    session = _get_admin_store().get_session(token)
+    if session is None:
+        raise HTTPException(status_code=401, detail="Invalid or expired admin session")
+    return session["user"]
+
+
+def _require_backoffice_runtime() -> None:
+    if (
+        RT.catalog_store is None
+        or RT.conversation_store is None
+        or RT.feedback_store is None
+        or RT.chat_service is None
+    ):
+        raise HTTPException(status_code=503, detail="Backoffice runtime is not ready")
+
+
 # Endpoints
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
@@ -378,6 +451,86 @@ async def list_prompt_scenes():
         "scenes": ["default", "it_helpdesk"],
         "default_scene": model_config.system_prompt_scene,
     }
+
+
+@app.post("/api/v1/auth/login", response_model=AdminLoginResponse)
+async def admin_login(request: AdminLoginRequest):
+    """Authenticate a backoffice administrator."""
+    session = _get_admin_store().authenticate(request.username, request.password)
+    if session is None:
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+    return AdminLoginResponse(
+        access_token=session["access_token"],
+        token_type=session["token_type"],
+        expires_at=session["expires_at"],
+        user=AdminUserResponse(**session["user"]),
+    )
+
+
+@app.get("/api/v1/auth/me")
+async def admin_me(current_admin: dict = Depends(_require_admin)):
+    return {"user": current_admin}
+
+
+@app.post("/api/v1/auth/logout")
+async def admin_logout(token: str = Depends(_require_admin_token)):
+    _get_admin_store().logout(token)
+    return {"status": "ok"}
+
+
+@app.get("/api/v1/admin/overview")
+async def admin_overview(current_admin: dict = Depends(_require_admin)):
+    _require_backoffice_runtime()
+    feedback = RT.feedback_store.summary()
+    conversation_counts = RT.conversation_store.counts_by_status()
+    latest = RT.conversation_store.list_conversations(status="all", limit=8)
+    return {
+        "generated_at": time.time(),
+        "admin": current_admin,
+        "catalog": RT.catalog_store.admin_summary(),
+        "conversations": {
+            "total": sum(conversation_counts.values()),
+            "by_status": conversation_counts,
+            "latest": latest,
+        },
+        "feedback": feedback,
+        "agents": {
+            "online_agents": RT.chat_service.online_agent_count(),
+            "agents": RT.chat_service.list_agents(),
+        },
+    }
+
+
+@app.get("/api/v1/admin/conversations")
+async def admin_conversations(
+    status: str = "all",
+    limit: int = 50,
+    current_admin: dict = Depends(_require_admin),
+):
+    _require_backoffice_runtime()
+    return {
+        "conversations": RT.conversation_store.list_conversations(
+            status=status,
+            limit=max(1, min(int(limit), 200)),
+        )
+    }
+
+
+@app.get("/api/v1/admin/products")
+async def admin_products(limit: int = 100, current_admin: dict = Depends(_require_admin)):
+    _require_backoffice_runtime()
+    return {"products": RT.catalog_store.list_products_for_admin(limit=limit)}
+
+
+@app.get("/api/v1/admin/feedback/ratings")
+async def admin_feedback_ratings(limit: int = 100, current_admin: dict = Depends(_require_admin)):
+    _require_backoffice_runtime()
+    return {"ratings": RT.feedback_store.list_ratings(limit=max(1, min(int(limit), 500)))}
+
+
+@app.get("/api/v1/admin/users")
+async def admin_users(current_admin: dict = Depends(_require_admin)):
+    return {"users": _get_admin_store().list_users()}
 
 
 @app.post("/api/v1/chat/completions")

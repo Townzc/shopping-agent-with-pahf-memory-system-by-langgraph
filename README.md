@@ -429,6 +429,36 @@ npm run build
 6. PAHF 存储路径权限问题
 - 检查 `PAHF_SQLITE_DB_PATH` / `PAHF_FAISS_PATH` 所在目录是否可写。
 
+## 后台登录与数据管理
+
+启动前后端后访问 `http://localhost:3000`，顶部切换到「后台管理」即可进入中后台。默认演示账号：
+
+```text
+账号：admin
+密码：admin123456
+```
+
+后台管理能力：
+
+- 登录认证：`POST /api/v1/auth/login`，后续管理接口使用 `Authorization: Bearer <token>`。
+- 总览看板：商品、SKU 库存、订单金额、会话状态、在线坐席、评价均分与消息满意度。
+- 会话管理：查看 AI 接待、待人工、人工中、已完结会话。
+- 商品库存：查看商品、分类、价格、SKU 数量和库存。
+- 用户评价分析：查看星级分布、低分标签、评价评论明细。
+- 管理员账号：查看本地后台账号与最近登录时间。
+
+本项目后端 SQL 使用本地 SQLite，启动时自动建表和种子演示数据，适合课程演示与单机部署。主要数据库文件：
+
+```text
+data/catalog/catalog.db          # 商品、SKU、客户、订单、物流、优惠券、退货
+data/conversations/conversations.db  # 客服会话与消息
+data/feedback/feedback.db        # 消息点赞/点踩与会话评分
+data/admin/admin.db              # 管理员账号与登录会话
+data/pahf/pahf_memory.db         # PAHF 用户记忆
+```
+
+这些运行时数据库目录已加入 `.gitignore`，不会提交到仓库。正式使用前请在 `.env` 修改 `ADMIN_DEFAULT_PASSWORD`，首次创建管理员后也建议删除旧的 `data/admin/admin.db` 重新生成。
+
 ## Roadmap
 
 - 支持流式输出（`/api/v1/chat/stream` 实装）

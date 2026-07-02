@@ -176,6 +176,118 @@ export async function fetchFeedbackSummary(): Promise<FeedbackSummary> {
   return request("/api/v1/feedback/summary");
 }
 
+// ---------------------------------------------------------------- backoffice
+export interface AdminUser {
+  username: string;
+  role: string;
+  display_name: string;
+  created_at: number;
+  last_login_at?: number | null;
+}
+
+export interface AdminLoginResponse {
+  access_token: string;
+  token_type: "bearer";
+  expires_at: number;
+  user: AdminUser;
+}
+
+export interface AdminProduct extends Product {
+  sku_count: number;
+  stock_total: number;
+  status: string;
+}
+
+export interface AdminRating {
+  conversation_id: string;
+  customer_id: string;
+  stars: number;
+  tags: string[];
+  comment: string;
+  created_at: number;
+}
+
+export interface AdminOverview {
+  generated_at: number;
+  admin: AdminUser;
+  catalog: {
+    products: number;
+    active_products: number;
+    skus: number;
+    customers: number;
+    orders: number;
+    coupons: number;
+    return_requests: number;
+    total_stock: number;
+    low_stock_skus: number;
+    revenue: number;
+    orders_by_status: Record<string, number>;
+    categories: Array<{ category: string; count: number }>;
+  };
+  conversations: {
+    total: number;
+    by_status: Record<string, number>;
+    latest: Conversation[];
+  };
+  feedback: FeedbackSummary;
+  agents: {
+    online_agents: number;
+    agents: Array<Record<string, unknown>>;
+  };
+}
+
+function authHeaders(token: string): Record<string, string> {
+  return { Authorization: `Bearer ${token}` };
+}
+
+export async function loginAdmin(username: string, password: string): Promise<AdminLoginResponse> {
+  return request("/api/v1/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ username, password }),
+  });
+}
+
+export async function fetchAdminMe(token: string): Promise<{ user: AdminUser }> {
+  return request("/api/v1/auth/me", { headers: authHeaders(token) });
+}
+
+export async function logoutAdmin(token: string): Promise<void> {
+  await request("/api/v1/auth/logout", { method: "POST", headers: authHeaders(token) });
+}
+
+export async function fetchAdminOverview(token: string): Promise<AdminOverview> {
+  return request("/api/v1/admin/overview", { headers: authHeaders(token) });
+}
+
+export async function fetchAdminConversations(token: string, status = "all"): Promise<Conversation[]> {
+  const res = await request<{ conversations: Conversation[] }>(
+    `/api/v1/admin/conversations?status=${encodeURIComponent(status)}`,
+    { headers: authHeaders(token) }
+  );
+  return res.conversations ?? [];
+}
+
+export async function fetchAdminProducts(token: string): Promise<AdminProduct[]> {
+  const res = await request<{ products: AdminProduct[] }>("/api/v1/admin/products?limit=200", {
+    headers: authHeaders(token),
+  });
+  return res.products ?? [];
+}
+
+export async function fetchAdminRatings(token: string): Promise<AdminRating[]> {
+  const res = await request<{ ratings: AdminRating[] }>("/api/v1/admin/feedback/ratings?limit=200", {
+    headers: authHeaders(token),
+  });
+  return res.ratings ?? [];
+}
+
+export async function fetchAdminUsers(token: string): Promise<AdminUser[]> {
+  const res = await request<{ users: AdminUser[] }>("/api/v1/admin/users", {
+    headers: authHeaders(token),
+  });
+  return res.users ?? [];
+}
+
 // ------------------------------------------------------------------- sockets
 export function customerSocketUrl(customerId: string): string {
   return `${WS_BASE}/ws/customer/${encodeURIComponent(customerId)}`;

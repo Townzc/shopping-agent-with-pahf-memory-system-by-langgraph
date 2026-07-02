@@ -100,6 +100,12 @@ class AppConfig:
     NOTIFY_WEBHOOK_URL: str = os.getenv("NOTIFY_WEBHOOK_URL", "")
     FEEDBACK_DB_PATH: str = os.getenv("FEEDBACK_DB_PATH", "./data/feedback/feedback.db")
 
+    # Backoffice admin settings
+    ADMIN_DB_PATH: str = os.getenv("ADMIN_DB_PATH", "./data/admin/admin.db")
+    ADMIN_DEFAULT_USERNAME: str = os.getenv("ADMIN_DEFAULT_USERNAME", "admin")
+    ADMIN_DEFAULT_PASSWORD: str = os.getenv("ADMIN_DEFAULT_PASSWORD", "admin123456")
+    ADMIN_SESSION_TTL_SECONDS: int = int(os.getenv("ADMIN_SESSION_TTL_SECONDS", "86400"))
+
 
 def get_model_config() -> ModelConfig:
     """Get the default model configuration."""
