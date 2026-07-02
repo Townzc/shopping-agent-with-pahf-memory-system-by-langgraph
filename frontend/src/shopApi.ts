@@ -10,6 +10,8 @@ import type {
   StoreAnalytics,
   AIInsight,
   ProductPotential,
+  OrderLite,
+  Shipment,
 } from "./shopTypes";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000").replace(/\/$/, "");
@@ -92,6 +94,43 @@ export async function fetchConversation(
   customerId: string
 ): Promise<{ conversation: Conversation; messages: ConvMessage[] }> {
   return request(`/api/v1/shop/conversation/${encodeURIComponent(customerId)}`);
+}
+
+export async function fetchCustomerOrders(customerId: string, limit = 10): Promise<OrderLite[]> {
+  const qs = new URLSearchParams({ customer_id: customerId, limit: String(limit) });
+  const res = await request<{ orders: OrderLite[] }>(`/api/v1/shop/orders?${qs.toString()}`);
+  return res.orders ?? [];
+}
+
+export async function fetchOrderDetail(orderId: string, customerId?: string): Promise<OrderLite> {
+  const qs = new URLSearchParams();
+  if (customerId) qs.set("customer_id", customerId);
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  return request(`/api/v1/shop/orders/${encodeURIComponent(orderId)}${suffix}`);
+}
+
+export async function fetchOrderShipment(orderId: string, customerId?: string): Promise<Shipment> {
+  const qs = new URLSearchParams();
+  if (customerId) qs.set("customer_id", customerId);
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  return request(`/api/v1/shop/orders/${encodeURIComponent(orderId)}/shipment${suffix}`);
+}
+
+export async function createReturnRequest(payload: {
+  customerId: string;
+  orderId: string;
+  skuCode?: string;
+  reason: string;
+}): Promise<{ created: boolean; return_id: string; order_id: string; status: string; refund_amount: number }> {
+  return request("/api/v1/shop/returns", {
+    method: "POST",
+    body: JSON.stringify({
+      customer_id: payload.customerId,
+      order_id: payload.orderId,
+      sku_code: payload.skuCode,
+      reason: payload.reason,
+    }),
+  });
 }
 
 // ------------------------------------------------------------- agent console

@@ -207,6 +207,12 @@ class CatalogStore:
 
     # ------------------------------------------------------------------ rows
     @staticmethod
+    def _image_url(product_id: str, image_url: str) -> str:
+        if str(image_url).startswith("https://img.shop.local/"):
+            return f"/product-images/{product_id}.webp"
+        return image_url
+
+    @staticmethod
     def _product_row(row: sqlite3.Row) -> Dict[str, Any]:
         return {
             "product_id": row["product_id"],
@@ -218,7 +224,7 @@ class CatalogStore:
             "currency": row["currency"],
             "rating": float(row["rating"]),
             "rating_count": int(row["rating_count"]),
-            "image_url": row["image_url"],
+            "image_url": CatalogStore._image_url(row["product_id"], row["image_url"]),
             "attributes": json.loads(row["attributes_json"] or "{}"),
             "status": row["status"],
         }

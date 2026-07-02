@@ -44,9 +44,17 @@ function timeago(ts: number): string {
   return `${Math.floor(d / 3600)}小时前`;
 }
 
-export default function AgentConsole() {
-  const [agentId, setAgentId] = useState("agent-1");
-  const [agentName, setAgentName] = useState("客服小美");
+interface AgentConsoleProps {
+  initialAgentId?: string;
+  initialAgentName?: string;
+}
+
+export default function AgentConsole({
+  initialAgentId = "agent-1",
+  initialAgentName = "客服小美",
+}: AgentConsoleProps) {
+  const [agentId, setAgentId] = useState(initialAgentId);
+  const [agentName, setAgentName] = useState(initialAgentName);
   const [filter, setFilter] = useState<string>("queued");
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedId, setSelectedId] = useState<string>("");
@@ -60,6 +68,11 @@ export default function AgentConsole() {
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const selectedRef = useRef<string>("");
   selectedRef.current = selectedId;
+
+  useEffect(() => {
+    setAgentId(initialAgentId);
+    setAgentName(initialAgentName);
+  }, [initialAgentId, initialAgentName]);
 
   const refreshList = useCallback(() => {
     fetchAgentConversations(filter).then(setConversations).catch(() => setConversations([]));

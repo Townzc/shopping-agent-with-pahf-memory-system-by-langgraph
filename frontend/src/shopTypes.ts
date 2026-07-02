@@ -51,11 +51,32 @@ export interface Conversation {
 
 export interface OrderLite {
   order_id: string;
+  customer_id?: string;
   status: string;
   total: number;
   currency: string;
   created_at: number;
-  items?: Array<{ title: string; qty: number; unit_price: number }>;
+  shipping_address?: string;
+  shipping_method?: string;
+  paid_at?: number | null;
+  shipment?: Shipment | null;
+  items?: Array<{
+    sku_code?: string;
+    product_id?: string;
+    title: string;
+    qty: number;
+    unit_price: number;
+  }>;
+}
+
+export interface Shipment {
+  shipment_id: string;
+  order_id: string;
+  carrier: string;
+  tracking_no: string;
+  status: string;
+  events: Array<{ time: number; desc: string }>;
+  updated_at: number;
 }
 
 export interface CustomerContext {

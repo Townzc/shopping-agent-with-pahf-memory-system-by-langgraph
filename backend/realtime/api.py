@@ -44,6 +44,13 @@ class EndRequest(BaseModel):
     customer_id: str = Field(..., min_length=1)
 
 
+class ReturnRequest(BaseModel):
+    customer_id: str = Field(..., min_length=1)
+    order_id: str = Field(..., min_length=1)
+    sku_code: Optional[str] = None
+    reason: str = Field(default="用户在商城端申请售后", min_length=1)
+
+
 class MessageFeedbackRequest(BaseModel):
     conversation_id: str = Field(..., min_length=1)
     message_id: int
@@ -124,6 +131,52 @@ async def shop_submit_review(product_id: str, req: ProductReviewRequest):
         )
     except ValueError:
         raise HTTPException(status_code=404, detail="product not found")
+
+
+@router.get("/api/v1/shop/orders")
+async def shop_orders(customer_id: str, limit: int = 10):
+    rows = RT.catalog_store.list_orders(customer_id=customer_id, limit=max(1, min(limit, 50)))
+    orders = []
+    for row in rows:
+        detail = RT.catalog_store.get_order(row["order_id"])
+        orders.append(detail or row)
+    return {"orders": orders}
+
+
+@router.get("/api/v1/shop/orders/{order_id}")
+async def shop_order_detail(order_id: str, customer_id: Optional[str] = None):
+    order = RT.catalog_store.get_order(order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail="order not found")
+    if customer_id and order["customer_id"] != customer_id:
+        raise HTTPException(status_code=403, detail="order does not belong to customer")
+    return order
+
+
+@router.get("/api/v1/shop/orders/{order_id}/shipment")
+async def shop_order_shipment(order_id: str, customer_id: Optional[str] = None):
+    order = RT.catalog_store.get_order(order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail="order not found")
+    if customer_id and order["customer_id"] != customer_id:
+        raise HTTPException(status_code=403, detail="order does not belong to customer")
+    shipment = order.get("shipment")
+    if shipment is None:
+        raise HTTPException(status_code=404, detail="shipment not found")
+    return shipment
+
+
+@router.post("/api/v1/shop/returns")
+async def shop_create_return(req: ReturnRequest):
+    result = RT.catalog_store.create_return(
+        order_id=req.order_id,
+        customer_id=req.customer_id,
+        sku_code=req.sku_code,
+        reason=req.reason,
+    )
+    if not result.get("created"):
+        raise HTTPException(status_code=400, detail=result)
+    return result
 
 
 # ----------------------------------------------------- customer chat (REST)

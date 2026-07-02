@@ -1,26 +1,105 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { FormEvent } from "react";
 import Storefront from "./Storefront";
 import AgentConsole from "./AgentConsole";
 import App from "./App";
 import AdminDashboard from "./AdminDashboard";
+import { loginAdmin, logoutAdmin } from "./shopApi";
 
 type View = "store" | "console" | "admin" | "debug";
+type PortalRole = "customer" | "merchant";
 
-const TABS: Array<{ key: View; label: string }> = [
+interface PortalSession {
+  role: PortalRole;
+  username: string;
+  displayName: string;
+  customerId?: string;
+  agentId?: string;
+  agentName?: string;
+  adminToken?: string;
+}
+
+const PORTAL_SESSION_KEY = "servicebot_portal_session_v1";
+const ADMIN_TOKEN_KEY = "servicebot_admin_token";
+
+const CUSTOMER_ACCOUNTS: Record<string, { password: string; displayName: string; customerId: string }> = {
+  "demo-user": { password: "user123456", displayName: "演示顾客", customerId: "demo-user" },
+  u1001: { password: "user123456", displayName: "李雷", customerId: "u1001" },
+};
+
+const CUSTOMER_TABS: Array<{ key: View; label: string }> = [
   { key: "store", label: "🛒 商城" },
+];
+
+const MERCHANT_TABS: Array<{ key: View; label: string }> = [
   { key: "console", label: "🎧 坐席工作台" },
   { key: "admin", label: "📊 后台管理" },
   { key: "debug", label: "🛠️ 调试台" },
 ];
 
+function readSession(): PortalSession | null {
+  if (typeof window === "undefined") return null;
+  const raw = window.localStorage.getItem(PORTAL_SESSION_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as PortalSession;
+  } catch {
+    window.localStorage.removeItem(PORTAL_SESSION_KEY);
+    return null;
+  }
+}
+
 export default function Root() {
-  const [view, setView] = useState<View>("store");
+  const [session, setSession] = useState<PortalSession | null>(() => readSession());
+  const [view, setView] = useState<View>(() => {
+    const current = readSession();
+    return current?.role === "merchant" ? "admin" : "store";
+  });
+
+  const tabs = useMemo(
+    () => (session?.role === "merchant" ? MERCHANT_TABS : CUSTOMER_TABS),
+    [session?.role]
+  );
+
+  useEffect(() => {
+    if (!session) return;
+    if (!tabs.some((tab) => tab.key === view)) {
+      setView(tabs[0].key);
+    }
+  }, [session, tabs, view]);
+
+  const saveSession = (next: PortalSession) => {
+    window.localStorage.setItem(PORTAL_SESSION_KEY, JSON.stringify(next));
+    setSession(next);
+    setView(next.role === "merchant" ? "admin" : "store");
+  };
+
+  const handleLogout = async () => {
+    const token = session?.adminToken || window.localStorage.getItem(ADMIN_TOKEN_KEY) || "";
+    if (token) {
+      await logoutAdmin(token).catch(() => undefined);
+    }
+    window.localStorage.removeItem(PORTAL_SESSION_KEY);
+    window.localStorage.removeItem(ADMIN_TOKEN_KEY);
+    setSession(null);
+    setView("store");
+  };
+
+  if (!session) {
+    return <LoginScreen onLogin={saveSession} />;
+  }
+
   return (
     <div className="root">
       <nav className="root-nav">
-        <span className="root-logo">ServiceBot · PAHF</span>
+        <div className="root-brand-block">
+          <span className="root-logo">ServiceBot · PAHF</span>
+          <span className="root-role">
+            {session.role === "customer" ? "顾客端" : "商家客服端"} · {session.displayName}
+          </span>
+        </div>
         <div className="root-tabs">
-          {TABS.map((t) => (
+          {tabs.map((t) => (
             <button
               key={t.key}
               className={view === t.key ? "root-tab active" : "root-tab"}
@@ -29,14 +108,137 @@ export default function Root() {
               {t.label}
             </button>
           ))}
+          <button className="root-logout" onClick={() => void handleLogout()}>
+            退出登录
+          </button>
         </div>
       </nav>
       <div className="root-view">
-        {view === "store" && <Storefront />}
-        {view === "console" && <AgentConsole />}
+        {view === "store" && (
+          <Storefront
+            initialCustomerId={session.customerId ?? session.username}
+            lockedCustomerId={session.role === "customer"}
+            customerName={session.displayName}
+          />
+        )}
+        {view === "console" && (
+          <AgentConsole
+            initialAgentId={session.agentId ?? "agent-1"}
+            initialAgentName={session.agentName ?? session.displayName}
+          />
+        )}
         {view === "admin" && <AdminDashboard />}
         {view === "debug" && <App />}
       </div>
     </div>
+  );
+}
+
+function LoginScreen({ onLogin }: { onLogin: (session: PortalSession) => void }) {
+  const [role, setRole] = useState<PortalRole>("customer");
+  const [username, setUsername] = useState("demo-user");
+  const [password, setPassword] = useState("user123456");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const switchRole = (nextRole: PortalRole) => {
+    setRole(nextRole);
+    setError("");
+    if (nextRole === "customer") {
+      setUsername("demo-user");
+      setPassword("user123456");
+    } else {
+      setUsername("admin");
+      setPassword("admin123456");
+    }
+  };
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setLoading(true);
+    setError("");
+    try {
+      if (role === "customer") {
+        const account = CUSTOMER_ACCOUNTS[username.trim()];
+        if (!account || account.password !== password) {
+          throw new Error("顾客账号或密码错误");
+        }
+        onLogin({
+          role: "customer",
+          username: username.trim(),
+          displayName: account.displayName,
+          customerId: account.customerId,
+        });
+        return;
+      }
+
+      const session = await loginAdmin(username.trim(), password);
+      window.localStorage.setItem(ADMIN_TOKEN_KEY, session.access_token);
+      onLogin({
+        role: "merchant",
+        username: session.user.username,
+        displayName: session.user.display_name || "商家客服",
+        agentId: "agent-1",
+        agentName: session.user.display_name || "商家客服",
+        adminToken: session.access_token,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "登录失败");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <main className="portal-login-shell">
+      <section className="portal-login-hero">
+        <div className="portal-login-copy">
+          <p className="admin-kicker">ServiceBot SaaS</p>
+          <h1>电商售后客服与评价分析平台</h1>
+          <p>
+            顾客进入商城咨询商品和售后，商家客服进入后台处理会话、查看评价和运营数据。
+          </p>
+        </div>
+        <form className="portal-login-card" onSubmit={submit}>
+          <div className="portal-role-switch" aria-label="选择登录角色">
+            <button
+              type="button"
+              className={role === "customer" ? "active" : ""}
+              onClick={() => switchRole("customer")}
+            >
+              顾客账号
+            </button>
+            <button
+              type="button"
+              className={role === "merchant" ? "active" : ""}
+              onClick={() => switchRole("merchant")}
+            >
+              商家/客服
+            </button>
+          </div>
+
+          <label>
+            账号
+            <input value={username} onChange={(event) => setUsername(event.target.value)} />
+          </label>
+          <label>
+            密码
+            <input
+              value={password}
+              type="password"
+              onChange={(event) => setPassword(event.target.value)}
+            />
+          </label>
+          {error && <div className="admin-alert">{error}</div>}
+          <button className="primary wide" disabled={loading}>
+            {loading ? "登录中..." : "登录系统"}
+          </button>
+          <div className="portal-demo-accounts">
+            <span>顾客：demo-user / user123456</span>
+            <span>商家：admin / admin123456</span>
+          </div>
+        </form>
+      </section>
+    </main>
   );
 }
