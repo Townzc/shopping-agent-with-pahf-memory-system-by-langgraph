@@ -17,6 +17,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 
+DEMO_CATALOG_VERSION = "2026-07-rich-catalog-v2"
+DEMO_CATALOG_MIN_PRODUCTS = 40
+
+
 def _tokenize(text: str) -> List[str]:
     return re.findall(r"[a-zA-Z0-9_一-鿿]+", str(text).lower())
 
@@ -42,8 +46,8 @@ class CatalogStore:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
-        if auto_seed and self.is_empty():
-            self.seed_demo_data()
+        if auto_seed and self.needs_demo_seed():
+            self.seed_demo_data(reset=not self.is_empty())
 
     # ------------------------------------------------------------------ infra
     def _connect(self) -> sqlite3.Connection:
@@ -149,6 +153,11 @@ class CatalogStore:
                     created_at    REAL NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS idx_returns_order ON return_requests(order_id);
+
+                CREATE TABLE IF NOT EXISTS catalog_meta (
+                    key   TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                );
                 """
             )
             conn.commit()
@@ -157,6 +166,41 @@ class CatalogStore:
         with self._connect() as conn:
             cur = conn.execute("SELECT COUNT(*) AS c FROM products")
             return int(cur.fetchone()["c"]) == 0
+
+    def product_count(self) -> int:
+        with self._connect() as conn:
+            cur = conn.execute("SELECT COUNT(*) AS c FROM products WHERE status = 'active'")
+            return int(cur.fetchone()["c"])
+
+    def demo_catalog_version(self) -> str:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT value FROM catalog_meta WHERE key = 'demo_catalog_version'"
+            ).fetchone()
+        return str(row["value"]) if row else ""
+
+    def needs_demo_seed(self) -> bool:
+        if self.is_empty():
+            return True
+        return (
+            self.demo_catalog_version() != DEMO_CATALOG_VERSION
+            or self.product_count() < DEMO_CATALOG_MIN_PRODUCTS
+        )
+
+    @staticmethod
+    def _clear_demo_data(conn: sqlite3.Connection) -> None:
+        for table in (
+            "return_requests",
+            "shipments",
+            "order_items",
+            "orders",
+            "coupons",
+            "customers",
+            "skus",
+            "products",
+            "catalog_meta",
+        ):
+            conn.execute(f"DELETE FROM {table}")
 
     def close(self) -> None:  # parity with other stores; connections are per-call
         return None
@@ -558,8 +602,8 @@ class CatalogStore:
         }
 
     # ---------------------------------------------------------------- seed
-    def seed_demo_data(self) -> None:
-        """Populate a small but realistic virtual shop. Idempotent via is_empty()."""
+    def seed_demo_data(self, reset: bool = False) -> None:
+        """Populate a realistic virtual shop catalog for demos and tests."""
         now = time.time()
         day = 86400.0
         cny = "CNY"
@@ -582,23 +626,23 @@ class CatalogStore:
              "https://img.shop.local/p1003.jpg", {"内存": "16GB", "重量": "1.3kg"},
              [("16-1T", {"配置": "16G+1TB"}, 6499.0, 9)]),
             ("P2001", "云感纯棉圆领卫衣", "320g 加厚纯棉，宽松落肩版型，男女同款。",
-             "服饰", "Cl0udy", 199.0, 4.5, 3200,
+             "服饰鞋包", "Cl0udy", 199.0, 4.5, 3200,
              "https://img.shop.local/p2001.jpg", {"材质": "纯棉", "版型": "宽松"},
              [("GRY-M", {"颜色": "花灰", "尺码": "M"}, 199.0, 80),
               ("GRY-L", {"颜色": "花灰", "尺码": "L"}, 199.0, 0),
               ("BLK-M", {"颜色": "黑色", "尺码": "M"}, 199.0, 45)]),
             ("P2002", "全天候轻量冲锋衣", "三层压胶防水，可拆卸抓绒内胆。",
-             "服饰", "Summit", 599.0, 4.7, 760,
+             "服饰鞋包", "Summit", 599.0, 4.7, 760,
              "https://img.shop.local/p2002.jpg", {"防水": "10000mm", "场景": "户外"},
              [("GRN-L", {"颜色": "松林绿", "尺码": "L"}, 599.0, 20),
               ("BLK-XL", {"颜色": "黑色", "尺码": "XL"}, 599.0, 7)]),
             ("P3001", "静音人体工学办公椅", "网布透气，3D 扶手，腰托支撑。",
-             "家居", "ErgoNest", 1099.0, 4.6, 1130,
+             "家居日用", "ErgoNest", 1099.0, 4.6, 1130,
              "https://img.shop.local/p3001.jpg", {"材质": "网布", "承重": "150kg"},
              [("BLK", {"颜色": "黑色"}, 1099.0, 25),
               ("GRY", {"颜色": "浅灰"}, 1099.0, 4)]),
             ("P3002", "暖光护眼台灯", "无频闪，五档色温，Type-C 充电。",
-             "家居", "Glowy", 159.0, 4.4, 2050,
+             "家居日用", "Glowy", 159.0, 4.4, 2050,
              "https://img.shop.local/p3002.jpg", {"色温": "可调", "充电": "Type-C"},
              [("WHT", {"颜色": "白色"}, 159.0, 120)]),
             ("P4001", "水光保湿精华 30ml", "玻尿酸+烟酰胺，温和不黏腻。",
@@ -610,8 +654,212 @@ class CatalogStore:
              "https://img.shop.local/p4002.jpg", {"功效": "清洁", "肤质": "敏感肌"},
              [("STD", {"规格": "120g"}, 89.0, 0)]),
         ]
+        products.extend([
+            ("P1004", "星云 Mini 8.8 平板电脑", "8.8英寸高刷护眼屏，适合网课、阅读与轻办公。",
+             "数码3C", "Nebula", 1899.0, 4.6, 1420,
+             "https://img.shop.local/p1004.jpg", {"屏幕": "8.8英寸 LCD", "存储": "128GB"},
+             [("GRAY-128", {"颜色": "深空灰", "存储": "128GB"}, 1899.0, 36),
+              ("BLUE-256", {"颜色": "海盐蓝", "存储": "256GB"}, 2299.0, 18)]),
+            ("P1005", "清风 27 英寸 4K 显示器", "IPS 面板，Type-C 反向供电，适合办公与修图。",
+             "数码3C", "ClearView", 1699.0, 4.7, 860,
+             "https://img.shop.local/p1005.jpg", {"分辨率": "3840x2160", "接口": "HDMI/DP/Type-C"},
+             [("STD", {"尺寸": "27英寸"}, 1699.0, 22)]),
+            ("P1006", "悦写 K3 机械键盘", "三模连接，热插拔轴体，PBT 键帽。",
+             "数码3C", "KeyMuse", 429.0, 4.5, 2100,
+             "https://img.shop.local/p1006.jpg", {"连接": "蓝牙/2.4G/有线", "配列": "84键"},
+             [("TEA", {"轴体": "茶轴", "颜色": "月岩灰"}, 429.0, 61),
+              ("RED", {"轴体": "红轴", "颜色": "奶油白"}, 429.0, 33)]),
+            ("P1007", "Pocket 65W 氮化镓快充头", "三口输出，兼容手机、平板和轻薄本。",
+             "数码3C", "VoltGo", 129.0, 4.8, 4800,
+             "https://img.shop.local/p1007.jpg", {"功率": "65W", "接口": "2C1A"},
+             [("WHITE", {"颜色": "白色"}, 129.0, 180)]),
+            ("P1008", "LinkPro AX3000 双频路由器", "Wi-Fi 6，四核处理器，支持 Mesh 组网。",
+             "数码3C", "LinkPro", 299.0, 4.5, 1550,
+             "https://img.shop.local/p1008.jpg", {"无线": "Wi-Fi 6", "速率": "AX3000"},
+             [("STD", {"版本": "标准版"}, 299.0, 44)]),
+            ("P1009", "腕上 Pulse S2 智能手表", "全天心率、血氧监测，14天续航。",
+             "数码3C", "Pulse", 699.0, 4.4, 1260,
+             "https://img.shop.local/p1009.jpg", {"续航": "14天", "防水": "5ATM"},
+             [("BLACK", {"颜色": "曜石黑"}, 699.0, 39),
+              ("PINK", {"颜色": "樱粉"}, 699.0, 14)]),
+            ("P1010", "影巡 2K 家用摄像头", "云台旋转，夜视增强，哭声/异响提醒。",
+             "数码3C", "HomeEye", 259.0, 4.3, 980,
+             "https://img.shop.local/p1010.jpg", {"清晰度": "2K", "存储": "MicroSD/云存储"},
+             [("STD", {"颜色": "白色"}, 259.0, 52)]),
+            ("P3003", "静音人体工学办公椅 Pro", "自适应腰托、4D 扶手、网布透气。",
+             "家居日用", "ErgoNest", 1299.0, 4.7, 1380,
+             "https://img.shop.local/p3003.jpg", {"承重": "150kg", "材质": "网布"},
+             [("BLACK", {"颜色": "黑色"}, 1299.0, 25),
+              ("GRAY", {"颜色": "浅灰"}, 1299.0, 8)]),
+            ("P3004", "透明抽屉式收纳箱 3只装", "可叠放设计，适合衣柜、玩具和杂物收纳。",
+             "家居日用", "Orderly", 119.0, 4.6, 3900,
+             "https://img.shop.local/p3004.jpg", {"容量": "18L/只", "数量": "3只装"},
+             [("CLEAR", {"颜色": "透明"}, 119.0, 96)]),
+            ("P3005", "云柔抗菌四件套", "60支长绒棉，抗菌整理，亲肤透气。",
+             "家居日用", "SleepWell", 369.0, 4.7, 2500,
+             "https://img.shop.local/p3005.jpg", {"材质": "长绒棉", "尺寸": "1.5/1.8m床"},
+             [("BLUE-150", {"颜色": "雾蓝", "尺寸": "1.5m"}, 369.0, 28),
+              ("GREEN-180", {"颜色": "松绿", "尺寸": "1.8m"}, 399.0, 18)]),
+            ("P3006", "米白陶瓷不粘煎锅 28cm", "加厚锅底，少油烟，电磁炉燃气通用。",
+             "家居日用", "CookMate", 159.0, 4.5, 3200,
+             "https://img.shop.local/p3006.jpg", {"直径": "28cm", "适用": "电磁炉/燃气"},
+             [("STD", {"颜色": "米白"}, 159.0, 73)]),
+            ("P3007", "恒温电热水壶 1.7L", "316不锈钢内胆，五档温控，自动断电。",
+             "家居日用", "WarmCup", 189.0, 4.6, 2100,
+             "https://img.shop.local/p3007.jpg", {"容量": "1.7L", "内胆": "316不锈钢"},
+             [("WHITE", {"颜色": "白色"}, 189.0, 64)]),
+            ("P3008", "轻音无线吸尘器 V6", "绿光显尘，双电机地刷，60分钟续航。",
+             "家居日用", "DustFree", 899.0, 4.5, 1160,
+             "https://img.shop.local/p3008.jpg", {"续航": "60分钟", "重量": "1.5kg"},
+             [("STD", {"版本": "标准版"}, 899.0, 19)]),
+            ("P3009", "低噪空气净化器 A5", "适用 45 平方米，甲醛/PM2.5 双传感。",
+             "家居日用", "AirLeaf", 1199.0, 4.6, 790,
+             "https://img.shop.local/p3009.jpg", {"适用面积": "45㎡", "滤芯": "H13 HEPA"},
+             [("STD", {"颜色": "白色"}, 1199.0, 16)]),
+            ("P3010", "浴室速干毛巾 4条装", "新疆棉，A类标准，吸水速干不掉毛。",
+             "家居日用", "SoftHome", 79.0, 4.5, 6400,
+             "https://img.shop.local/p3010.jpg", {"材质": "纯棉", "数量": "4条"},
+             [("MIX", {"颜色": "混色"}, 79.0, 220)]),
+            ("P2003", "通勤防泼水双肩包 22L", "独立电脑仓，背负减压，适合通勤和短途旅行。",
+             "服饰鞋包", "UrbanTrail", 259.0, 4.6, 1880,
+             "https://img.shop.local/p2003.jpg", {"容量": "22L", "电脑仓": "15.6英寸"},
+             [("BLACK", {"颜色": "黑色"}, 259.0, 42),
+              ("KHAKI", {"颜色": "卡其"}, 259.0, 17)]),
+            ("P2004", "云弹缓震跑步鞋", "轻量回弹中底，适合日常慢跑和健走。",
+             "服饰鞋包", "FleetRun", 399.0, 4.6, 2750,
+             "https://img.shop.local/p2004.jpg", {"鞋面": "工程网布", "场景": "慢跑"},
+             [("BLK-42", {"颜色": "黑白", "尺码": "42"}, 399.0, 31),
+              ("WHT-38", {"颜色": "米白", "尺码": "38"}, 399.0, 23)]),
+            ("P2005", "抗皱商务衬衫", "易打理面料，修身剪裁，通勤不易皱。",
+             "服饰鞋包", "DailyFit", 169.0, 4.4, 1980,
+             "https://img.shop.local/p2005.jpg", {"材质": "棉混纺", "版型": "修身"},
+             [("WHITE-M", {"颜色": "白色", "尺码": "M"}, 169.0, 44),
+              ("BLUE-L", {"颜色": "浅蓝", "尺码": "L"}, 169.0, 27)]),
+            ("P2006", "24寸轻量拉杆箱", "PC材质，静音万向轮，干湿分区。",
+             "服饰鞋包", "GoCase", 399.0, 4.5, 1640,
+             "https://img.shop.local/p2006.jpg", {"尺寸": "24寸", "材质": "PC"},
+             [("SILVER", {"颜色": "银灰"}, 399.0, 21),
+              ("GREEN", {"颜色": "薄荷绿"}, 399.0, 12)]),
+            ("P2007", "高腰速干瑜伽裤", "裸感面料，四面弹力，高强度训练不勒腰。",
+             "服饰鞋包", "Flexi", 129.0, 4.5, 3600,
+             "https://img.shop.local/p2007.jpg", {"材质": "锦氨混纺", "长度": "九分"},
+             [("BLACK-S", {"颜色": "黑色", "尺码": "S"}, 129.0, 52),
+              ("GRAY-M", {"颜色": "雾灰", "尺码": "M"}, 129.0, 38)]),
+            ("P2008", "德绒保暖内衣套装", "轻薄锁温，亲肤不起球，秋冬打底。",
+             "服饰鞋包", "WarmFit", 199.0, 4.6, 4200,
+             "https://img.shop.local/p2008.jpg", {"材质": "德绒", "厚度": "中厚"},
+             [("M", {"颜色": "深灰", "尺码": "M"}, 199.0, 66),
+              ("XL", {"颜色": "深灰", "尺码": "XL"}, 199.0, 29)]),
+            ("P4003", "清透防晒乳 SPF50+ 50ml", "通勤户外可用，成膜快，不泛白。",
+             "美妆个护", "Sunly", 129.0, 4.6, 5200,
+             "https://img.shop.local/p4003.jpg", {"SPF": "50+", "规格": "50ml"},
+             [("STD", {"规格": "50ml"}, 129.0, 140)]),
+            ("P4004", "负离子高速吹风机", "11万转高速电机，恒温护发，低噪。",
+             "美妆个护", "AeroDry", 499.0, 4.7, 1800,
+             "https://img.shop.local/p4004.jpg", {"电机": "11万转", "风嘴": "2个"},
+             [("WHITE", {"颜色": "珍珠白"}, 499.0, 34),
+              ("GRAY", {"颜色": "钛灰"}, 499.0, 11)]),
+            ("P4005", "玻尿酸补水面膜 20片", "三重玻尿酸，轻薄膜布，晒后补水。",
+             "美妆个护", "Aqua", 99.0, 4.5, 6800,
+             "https://img.shop.local/p4005.jpg", {"功效": "补水", "数量": "20片"},
+             [("BOX", {"规格": "20片/盒"}, 99.0, 180)]),
+            ("P4006", "声波电动牙刷 T5", "五档模式，压力提醒，IPX7 防水。",
+             "美妆个护", "SmilePro", 199.0, 4.6, 3100,
+             "https://img.shop.local/p4006.jpg", {"模式": "5档", "续航": "45天"},
+             [("BLUE", {"颜色": "海盐蓝"}, 199.0, 57),
+              ("PINK", {"颜色": "樱花粉"}, 199.0, 46)]),
+            ("P4007", "三刀头电动剃须刀", "浮动刀头，Type-C 充电，全身水洗。",
+             "美妆个护", "SharpEase", 269.0, 4.4, 1450,
+             "https://img.shop.local/p4007.jpg", {"刀头": "三刀头", "防水": "IPX7"},
+             [("STD", {"颜色": "黑色"}, 269.0, 38)]),
+            ("P5001", "柔薄拉拉裤 L 码 76片", "弱酸亲肤表层，夜用大吸量。",
+             "母婴宠物", "BabySoft", 159.0, 4.7, 6200,
+             "https://img.shop.local/p5001.jpg", {"尺码": "L", "数量": "76片"},
+             [("L76", {"尺码": "L", "数量": "76片"}, 159.0, 115)]),
+            ("P5002", "婴儿恒温调奶器 1.2L", "24小时恒温，除氯沸腾，一键冲奶。",
+             "母婴宠物", "BabyCare", 239.0, 4.6, 1300,
+             "https://img.shop.local/p5002.jpg", {"容量": "1.2L", "温控": "40-90℃"},
+             [("STD", {"颜色": "白色"}, 239.0, 26)]),
+            ("P5003", "可折叠轻便婴儿推车", "一键收车，可登机，五点式安全带。",
+             "母婴宠物", "TinyTrip", 899.0, 4.5, 760,
+             "https://img.shop.local/p5003.jpg", {"重量": "6.2kg", "适龄": "6-36个月"},
+             [("GRAY", {"颜色": "石墨灰"}, 899.0, 13)]),
+            ("P5004", "PPSU 宽口奶瓶 240ml", "耐摔耐高温，防胀气奶嘴。",
+             "母婴宠物", "BabyCare", 89.0, 4.6, 2800,
+             "https://img.shop.local/p5004.jpg", {"材质": "PPSU", "容量": "240ml"},
+             [("STD", {"规格": "240ml"}, 89.0, 86)]),
+            ("P5005", "成猫全价猫粮 5kg", "鸡肉鱼肉配方，添加益生元。",
+             "母婴宠物", "PawMeal", 189.0, 4.5, 3400,
+             "https://img.shop.local/p5005.jpg", {"规格": "5kg", "适用": "成猫"},
+             [("CHICKEN", {"口味": "鸡肉鱼肉"}, 189.0, 58)]),
+            ("P5006", "豆腐猫砂 6L 4包", "低尘可冲厕，绿茶除味。",
+             "母婴宠物", "CleanPaw", 99.0, 4.4, 4100,
+             "https://img.shop.local/p5006.jpg", {"规格": "6Lx4", "香型": "绿茶"},
+             [("GREEN", {"香型": "绿茶"}, 99.0, 102)]),
+            ("P5007", "宠物自动饮水机 2.5L", "循环活水，静音水泵，三重过滤。",
+             "母婴宠物", "PawHome", 149.0, 4.5, 1720,
+             "https://img.shop.local/p5007.jpg", {"容量": "2.5L", "供电": "USB"},
+             [("WHITE", {"颜色": "白色"}, 149.0, 45)]),
+            ("P6001", "意式拼配咖啡豆 500g", "中深烘，坚果巧克力风味，适合美式和拿铁。",
+             "食品饮料", "BeanTalk", 89.0, 4.6, 5300,
+             "https://img.shop.local/p6001.jpg", {"烘焙": "中深烘", "规格": "500g"},
+             [("500G", {"规格": "500g"}, 89.0, 76)]),
+            ("P6002", "每日坚果 30包", "核桃、腰果、扁桃仁与果干独立小包装。",
+             "食品饮料", "NutriDay", 129.0, 4.7, 8800,
+             "https://img.shop.local/p6002.jpg", {"数量": "30包", "净含量": "750g"},
+             [("BOX", {"规格": "30包"}, 129.0, 95)]),
+            ("P6003", "低糖燕麦脆 1kg", "添加冻干草莓和坚果，早餐冲泡即食。",
+             "食品饮料", "GrainUp", 59.0, 4.4, 2950,
+             "https://img.shop.local/p6003.jpg", {"规格": "1kg", "糖分": "低糖"},
+             [("STD", {"口味": "草莓坚果"}, 59.0, 120)]),
+            ("P6004", "无糖乌龙茶 12瓶", "原叶萃取，0糖0脂，冷藏口感更佳。",
+             "食品饮料", "TeaFlow", 49.0, 4.5, 6200,
+             "https://img.shop.local/p6004.jpg", {"规格": "500ml x 12", "糖分": "无糖"},
+             [("CASE", {"规格": "12瓶"}, 49.0, 160)]),
+            ("P7001", "加厚防潮露营垫", "双面铝膜，蛋巢结构，帐篷内外可用。",
+             "运动户外", "CampGo", 79.0, 4.4, 2180,
+             "https://img.shop.local/p7001.jpg", {"尺寸": "190x60cm", "厚度": "2cm"},
+             [("GREEN", {"颜色": "军绿"}, 79.0, 74)]),
+            ("P7002", "全自动速开帐篷 3-4人", "一压成型，防泼水外帐，带门厅。",
+             "运动户外", "CampGo", 499.0, 4.5, 980,
+             "https://img.shop.local/p7002.jpg", {"人数": "3-4人", "防水": "PU2000"},
+             [("KHAKI", {"颜色": "卡其"}, 499.0, 19)]),
+            ("P7003", "可调节哑铃 10kg 一对", "旋钮调节重量，家用力量训练。",
+             "运动户外", "FitLab", 299.0, 4.5, 1320,
+             "https://img.shop.local/p7003.jpg", {"重量": "10kgx2", "调节": "5档"},
+             [("PAIR", {"规格": "一对"}, 299.0, 25)]),
+            ("P7004", "防滑 TPE 瑜伽垫 6mm", "双面防滑，回弹柔软，附绑带。",
+             "运动户外", "Flexi", 89.0, 4.6, 5300,
+             "https://img.shop.local/p7004.jpg", {"厚度": "6mm", "材质": "TPE"},
+             [("PURPLE", {"颜色": "雾紫"}, 89.0, 88),
+              ("GREEN", {"颜色": "豆绿"}, 89.0, 71)]),
+            ("P7005", "一体成型骑行头盔", "轻量通风，后脑旋钮调节，夜间反光。",
+             "运动户外", "RideSafe", 159.0, 4.4, 960,
+             "https://img.shop.local/p7005.jpg", {"尺码": "M/L", "重量": "260g"},
+             [("M", {"颜色": "白色", "尺码": "M"}, 159.0, 21),
+              ("L", {"颜色": "黑色", "尺码": "L"}, 159.0, 17)]),
+            ("P8001", "点阵活页笔记本 A5", "180度平摊，100g 道林纸，适合手账和会议记录。",
+             "图书文具", "NoteWell", 39.0, 4.6, 7400,
+             "https://img.shop.local/p8001.jpg", {"规格": "A5", "页数": "160页"},
+             [("DOT", {"内页": "点阵"}, 39.0, 180)]),
+            ("P8002", "0.5mm 速干中性笔 12支", "顺滑不洇墨，学生和办公常用。",
+             "图书文具", "WritePro", 24.9, 4.5, 9600,
+             "https://img.shop.local/p8002.jpg", {"笔尖": "0.5mm", "数量": "12支"},
+             [("BLACK", {"颜色": "黑色"}, 24.9, 260),
+              ("BLUE", {"颜色": "蓝色"}, 24.9, 90)]),
+            ("P8003", "人体工学护腕鼠标垫", "凝胶护腕，锁边耐磨，适合长期办公。",
+             "图书文具", "DeskMate", 49.0, 4.4, 1850,
+             "https://img.shop.local/p8003.jpg", {"尺寸": "25x23cm", "材质": "布面+凝胶"},
+             [("GRAY", {"颜色": "灰色"}, 49.0, 75)]),
+            ("P8004", "双层桌面文件架", "金属喷涂，文件、书本、平板分类收纳。",
+             "图书文具", "DeskMate", 69.0, 4.5, 1600,
+             "https://img.shop.local/p8004.jpg", {"层数": "双层", "材质": "金属"},
+             [("WHITE", {"颜色": "白色"}, 69.0, 54)]),
+        ])
 
         with self._connect() as conn:
+            if reset:
+                self._clear_demo_data(conn)
             for (pid, title, desc, cat, brand, price, rating, count, img, attrs, skus) in products:
                 conn.execute(
                     """INSERT INTO products(product_id, title, description, category,
@@ -634,6 +882,7 @@ class CatalogStore:
             customers = [
                 ("demo-user", "演示用户", "demo@shop.local", "13800000000", "gold", now - 200 * day),
                 ("u1001", "李雷", "lilei@shop.local", "13900000001", "silver", now - 120 * day),
+                ("u1002", "韩梅梅", "hanmeimei@shop.local", "13900000002", "gold", now - 90 * day),
             ]
             for cid, name, email, phone, tier, created in customers:
                 conn.execute(
@@ -660,6 +909,20 @@ class CatalogStore:
                  [("P3001-BLK", "P3001", "静音人体工学办公椅", 1, 1099.0)],
                  ("ZTO", "ZT5566778899", "in_transit",
                   [("已揽收", 2), ("运输中", 1)])),
+                ("SO20260068", "u1002", "delivered", 6, "杭州市西湖区文三路88号", "京东物流",
+                 [("P5001-L76", "P5001", "柔薄拉拉裤 L 码 76片", 2, 159.0),
+                  ("P5004-STD", "P5004", "PPSU 宽口奶瓶 240ml", 1, 89.0)],
+                 ("JD", "JD2026070201", "delivered",
+                  [("已揽收", 6), ("到达杭州分拨中心", 5), ("派送中", 4), ("已签收", 4)])),
+                ("SO20260073", "demo-user", "delivered", 18, "上海市浦东新区世纪大道100号", "顺丰标快",
+                 [("P2004-BLK-42", "P2004", "云弹缓震跑步鞋", 1, 399.0),
+                  ("P7004-GREEN", "P7004", "防滑 TPE 瑜伽垫 6mm", 1, 89.0)],
+                 ("SF", "SF2026070202", "delivered",
+                  [("已揽收", 18), ("运输中", 17), ("已签收", 16)])),
+                ("SO20260088", "u1001", "pending_payment", 0, "北京市海淀区中关村大街1号", "中通快递",
+                 [("P1005-STD", "P1005", "清风 27 英寸 4K 显示器", 1, 1699.0),
+                  ("P8003-GRAY", "P8003", "人体工学护腕鼠标垫", 1, 49.0)],
+                 None),
             ]
             for (oid, cid, status, off, addr, method, items, shipment) in orders:
                 total = round(sum(p * q for (_s, _p, _t, q, p) in items), 2)
@@ -703,4 +966,9 @@ class CatalogStore:
                        valid_from, valid_to, active) VALUES (?,?,?,?,?,?,?,1)""",
                     (code, kind, value, min_spend, desc, vfrom, vto),
                 )
+            conn.execute(
+                """INSERT INTO catalog_meta(key, value) VALUES ('demo_catalog_version', ?)
+                   ON CONFLICT(key) DO UPDATE SET value=excluded.value""",
+                (DEMO_CATALOG_VERSION,),
+            )
             conn.commit()

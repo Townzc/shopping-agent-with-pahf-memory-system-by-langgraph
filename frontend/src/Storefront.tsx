@@ -13,13 +13,19 @@ import {
 
 const CATEGORY_EMOJI: Record<string, string> = {
   "数码3C": "📱",
-  服饰: "👕",
   家居: "🛋️",
+  家居日用: "🏠",
+  服饰: "👕",
+  服饰鞋包: "👟",
   美妆个护: "💄",
+  母婴宠物: "🧸",
+  食品饮料: "☕",
+  运动户外: "🏕️",
+  图书文具: "📚",
 };
 
 function emojiFor(category: string): string {
-  return CATEGORY_EMOJI[category] ?? "🛍️";
+  return CATEGORY_EMOJI[category] ?? "🛒";
 }
 
 function yuan(n: number): string {
