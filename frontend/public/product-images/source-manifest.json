@@ -1,0 +1,497 @@
+﻿[
+    {
+        "product_id":  "P1001",
+        "dummyjson_id":  123,
+        "source_title":  "iPhone 13 Pro",
+        "source_category":  "smartphones",
+        "source_brand":  "Apple",
+        "image":  "/product-images/P1001.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/smartphones/iphone-13-pro/thumbnail.webp"
+    },
+    {
+        "product_id":  "P1002",
+        "dummyjson_id":  101,
+        "source_title":  "Apple AirPods Max Silver",
+        "source_category":  "mobile-accessories",
+        "source_brand":  "Apple",
+        "image":  "/product-images/P1002.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/mobile-accessories/apple-airpods-max-silver/thumbnail.webp"
+    },
+    {
+        "product_id":  "P1003",
+        "dummyjson_id":  78,
+        "source_title":  "Apple MacBook Pro 14 Inch Space Grey",
+        "source_category":  "laptops",
+        "source_brand":  "Apple",
+        "image":  "/product-images/P1003.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/laptops/apple-macbook-pro-14-inch-space-grey/thumbnail.webp"
+    },
+    {
+        "product_id":  "P2001",
+        "dummyjson_id":  84,
+        "source_title":  "Gigabyte Aorus Men Tshirt",
+        "source_category":  "mens-shirts",
+        "source_brand":  "Gigabyte",
+        "image":  "/product-images/P2001.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/mens-shirts/gigabyte-aorus-men-tshirt/thumbnail.webp"
+    },
+    {
+        "product_id":  "P2002",
+        "dummyjson_id":  83,
+        "source_title":  "Blue \u0026 Black Check Shirt",
+        "source_category":  "mens-shirts",
+        "source_brand":  "Fashion Trends",
+        "image":  "/product-images/P2002.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/mens-shirts/blue-\u0026-black-check-shirt/thumbnail.webp"
+    },
+    {
+        "product_id":  "P3001",
+        "dummyjson_id":  14,
+        "source_title":  "Knoll Saarinen Executive Conference Chair",
+        "source_category":  "furniture",
+        "source_brand":  "Knoll",
+        "image":  "/product-images/P3001.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/furniture/knoll-saarinen-executive-conference-chair/thumbnail.webp"
+    },
+    {
+        "product_id":  "P3002",
+        "dummyjson_id":  47,
+        "source_title":  "Table Lamp",
+        "source_category":  "home-decoration",
+        "source_brand":  null,
+        "image":  "/product-images/P3002.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/home-decoration/table-lamp/thumbnail.webp"
+    },
+    {
+        "product_id":  "P4001",
+        "dummyjson_id":  119,
+        "source_title":  "Olay Ultra Moisture Shea Butter Body Wash",
+        "source_category":  "skin-care",
+        "source_brand":  "Olay",
+        "image":  "/product-images/P4001.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/skin-care/olay-ultra-moisture-shea-butter-body-wash/thumbnail.webp"
+    },
+    {
+        "product_id":  "P4002",
+        "dummyjson_id":  118,
+        "source_title":  "Attitude Super Leaves Hand Soap",
+        "source_category":  "skin-care",
+        "source_brand":  "Attitude",
+        "image":  "/product-images/P4002.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/skin-care/attitude-super-leaves-hand-soap/thumbnail.webp"
+    },
+    {
+        "product_id":  "P1004",
+        "dummyjson_id":  159,
+        "source_title":  "iPad Mini 2021 Starlight",
+        "source_category":  "tablets",
+        "source_brand":  "Apple",
+        "image":  "/product-images/P1004.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/tablets/ipad-mini-2021-starlight/thumbnail.webp"
+    },
+    {
+        "product_id":  "P1005",
+        "dummyjson_id":  82,
+        "source_title":  "New DELL XPS 13 9300 Laptop",
+        "source_category":  "laptops",
+        "source_brand":  "Dell",
+        "image":  "/product-images/P1005.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/laptops/new-dell-xps-13-9300-laptop/thumbnail.webp"
+    },
+    {
+        "product_id":  "P1006",
+        "dummyjson_id":  99,
+        "source_title":  "Amazon Echo Plus",
+        "source_category":  "mobile-accessories",
+        "source_brand":  "Amazon",
+        "image":  "/product-images/P1006.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/mobile-accessories/amazon-echo-plus/thumbnail.webp"
+    },
+    {
+        "product_id":  "P1007",
+        "dummyjson_id":  104,
+        "source_title":  "Apple iPhone Charger",
+        "source_category":  "mobile-accessories",
+        "source_brand":  "Apple",
+        "image":  "/product-images/P1007.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/mobile-accessories/apple-iphone-charger/thumbnail.webp"
+    },
+    {
+        "product_id":  "P1008",
+        "dummyjson_id":  103,
+        "source_title":  "Apple HomePod Mini Cosmic Grey",
+        "source_category":  "mobile-accessories",
+        "source_brand":  "Apple",
+        "image":  "/product-images/P1008.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/mobile-accessories/apple-homepod-mini-cosmic-grey/thumbnail.webp"
+    },
+    {
+        "product_id":  "P1009",
+        "dummyjson_id":  106,
+        "source_title":  "Apple Watch Series 4 Gold",
+        "source_category":  "mobile-accessories",
+        "source_brand":  "Apple",
+        "image":  "/product-images/P1009.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/mobile-accessories/apple-watch-series-4-gold/thumbnail.webp"
+    },
+    {
+        "product_id":  "P1010",
+        "dummyjson_id":  112,
+        "source_title":  "TV Studio Camera Pedestal",
+        "source_category":  "mobile-accessories",
+        "source_brand":  "ProVision",
+        "image":  "/product-images/P1010.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/mobile-accessories/tv-studio-camera-pedestal/thumbnail.webp"
+    },
+    {
+        "product_id":  "P3003",
+        "dummyjson_id":  14,
+        "source_title":  "Knoll Saarinen Executive Conference Chair",
+        "source_category":  "furniture",
+        "source_brand":  "Knoll",
+        "image":  "/product-images/P3003.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/furniture/knoll-saarinen-executive-conference-chair/thumbnail.webp"
+    },
+    {
+        "product_id":  "P3004",
+        "dummyjson_id":  41,
+        "source_title":  "Tissue Paper Box",
+        "source_category":  "groceries",
+        "source_brand":  null,
+        "image":  "/product-images/P3004.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/groceries/tissue-paper-box/thumbnail.webp"
+    },
+    {
+        "product_id":  "P3005",
+        "dummyjson_id":  11,
+        "source_title":  "Annibale Colombo Bed",
+        "source_category":  "furniture",
+        "source_brand":  "Annibale Colombo",
+        "image":  "/product-images/P3005.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/furniture/annibale-colombo-bed/thumbnail.webp"
+    },
+    {
+        "product_id":  "P3006",
+        "dummyjson_id":  68,
+        "source_title":  "Pan",
+        "source_category":  "kitchen-accessories",
+        "source_brand":  null,
+        "image":  "/product-images/P3006.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/kitchen-accessories/pan/thumbnail.webp"
+    },
+    {
+        "product_id":  "P3007",
+        "dummyjson_id":  71,
+        "source_title":  "Silver Pot With Glass Cap",
+        "source_category":  "kitchen-accessories",
+        "source_brand":  null,
+        "image":  "/product-images/P3007.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/kitchen-accessories/silver-pot-with-glass-cap/thumbnail.webp"
+    },
+    {
+        "product_id":  "P3008",
+        "dummyjson_id":  51,
+        "source_title":  "Boxed Blender",
+        "source_category":  "kitchen-accessories",
+        "source_brand":  null,
+        "image":  "/product-images/P3008.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/kitchen-accessories/boxed-blender/thumbnail.webp"
+    },
+    {
+        "product_id":  "P3009",
+        "dummyjson_id":  45,
+        "source_title":  "House Showpiece Plant",
+        "source_category":  "home-decoration",
+        "source_brand":  null,
+        "image":  "/product-images/P3009.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/home-decoration/house-showpiece-plant/thumbnail.webp"
+    },
+    {
+        "product_id":  "P3010",
+        "dummyjson_id":  41,
+        "source_title":  "Tissue Paper Box",
+        "source_category":  "groceries",
+        "source_brand":  null,
+        "image":  "/product-images/P3010.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/groceries/tissue-paper-box/thumbnail.webp"
+    },
+    {
+        "product_id":  "P2003",
+        "dummyjson_id":  175,
+        "source_title":  "White Faux Leather Backpack",
+        "source_category":  "womens-bags",
+        "source_brand":  "Urban Chic",
+        "image":  "/product-images/P2003.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/womens-bags/white-faux-leather-backpack/thumbnail.webp"
+    },
+    {
+        "product_id":  "P2004",
+        "dummyjson_id":  88,
+        "source_title":  "Nike Air Jordan 1 Red And Black",
+        "source_category":  "mens-shoes",
+        "source_brand":  "Nike",
+        "image":  "/product-images/P2004.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/mens-shoes/nike-air-jordan-1-red-and-black/thumbnail.webp"
+    },
+    {
+        "product_id":  "P2005",
+        "dummyjson_id":  83,
+        "source_title":  "Blue \u0026 Black Check Shirt",
+        "source_category":  "mens-shirts",
+        "source_brand":  "Fashion Trends",
+        "image":  "/product-images/P2005.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/mens-shirts/blue-\u0026-black-check-shirt/thumbnail.webp"
+    },
+    {
+        "product_id":  "P2006",
+        "dummyjson_id":  175,
+        "source_title":  "White Faux Leather Backpack",
+        "source_category":  "womens-bags",
+        "source_brand":  "Urban Chic",
+        "image":  "/product-images/P2006.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/womens-bags/white-faux-leather-backpack/thumbnail.webp"
+    },
+    {
+        "product_id":  "P2007",
+        "dummyjson_id":  165,
+        "source_title":  "Short Frock",
+        "source_category":  "tops",
+        "source_brand":  null,
+        "image":  "/product-images/P2007.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/tops/short-frock/thumbnail.webp"
+    },
+    {
+        "product_id":  "P2008",
+        "dummyjson_id":  87,
+        "source_title":  "Men Check Shirt",
+        "source_category":  "mens-shirts",
+        "source_brand":  "Urban Chic",
+        "image":  "/product-images/P2008.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/mens-shirts/men-check-shirt/thumbnail.webp"
+    },
+    {
+        "product_id":  "P4003",
+        "dummyjson_id":  119,
+        "source_title":  "Olay Ultra Moisture Shea Butter Body Wash",
+        "source_category":  "skin-care",
+        "source_brand":  "Olay",
+        "image":  "/product-images/P4003.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/skin-care/olay-ultra-moisture-shea-butter-body-wash/thumbnail.webp"
+    },
+    {
+        "product_id":  "P4004",
+        "dummyjson_id":  120,
+        "source_title":  "Vaseline Men Body and Face Lotion",
+        "source_category":  "skin-care",
+        "source_brand":  "Vaseline",
+        "image":  "/product-images/P4004.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/skin-care/vaseline-men-body-and-face-lotion/thumbnail.webp"
+    },
+    {
+        "product_id":  "P4005",
+        "dummyjson_id":  1,
+        "source_title":  "Essence Mascara Lash Princess",
+        "source_category":  "beauty",
+        "source_brand":  "Essence",
+        "image":  "/product-images/P4005.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/beauty/essence-mascara-lash-princess/thumbnail.webp"
+    },
+    {
+        "product_id":  "P4006",
+        "dummyjson_id":  104,
+        "source_title":  "Apple iPhone Charger",
+        "source_category":  "mobile-accessories",
+        "source_brand":  "Apple",
+        "image":  "/product-images/P4006.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/mobile-accessories/apple-iphone-charger/thumbnail.webp"
+    },
+    {
+        "product_id":  "P4007",
+        "dummyjson_id":  107,
+        "source_title":  "Beats Flex Wireless Earphones",
+        "source_category":  "mobile-accessories",
+        "source_brand":  "Beats",
+        "image":  "/product-images/P4007.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/mobile-accessories/beats-flex-wireless-earphones/thumbnail.webp"
+    },
+    {
+        "product_id":  "P5001",
+        "dummyjson_id":  41,
+        "source_title":  "Tissue Paper Box",
+        "source_category":  "groceries",
+        "source_brand":  null,
+        "image":  "/product-images/P5001.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/groceries/tissue-paper-box/thumbnail.webp"
+    },
+    {
+        "product_id":  "P5002",
+        "dummyjson_id":  65,
+        "source_title":  "Lunch Box",
+        "source_category":  "kitchen-accessories",
+        "source_brand":  null,
+        "image":  "/product-images/P5002.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/kitchen-accessories/lunch-box/thumbnail.webp"
+    },
+    {
+        "product_id":  "P5003",
+        "dummyjson_id":  43,
+        "source_title":  "Decoration Swing",
+        "source_category":  "home-decoration",
+        "source_brand":  null,
+        "image":  "/product-images/P5003.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/home-decoration/decoration-swing/thumbnail.webp"
+    },
+    {
+        "product_id":  "P5004",
+        "dummyjson_id":  32,
+        "source_title":  "Milk",
+        "source_category":  "groceries",
+        "source_brand":  null,
+        "image":  "/product-images/P5004.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/groceries/milk/thumbnail.webp"
+    },
+    {
+        "product_id":  "P5005",
+        "dummyjson_id":  18,
+        "source_title":  "Cat Food",
+        "source_category":  "groceries",
+        "source_brand":  null,
+        "image":  "/product-images/P5005.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/groceries/cat-food/thumbnail.webp"
+    },
+    {
+        "product_id":  "P5006",
+        "dummyjson_id":  22,
+        "source_title":  "Dog Food",
+        "source_category":  "groceries",
+        "source_brand":  null,
+        "image":  "/product-images/P5006.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/groceries/dog-food/thumbnail.webp"
+    },
+    {
+        "product_id":  "P5007",
+        "dummyjson_id":  46,
+        "source_title":  "Plant Pot",
+        "source_category":  "home-decoration",
+        "source_brand":  null,
+        "image":  "/product-images/P5007.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/home-decoration/plant-pot/thumbnail.webp"
+    },
+    {
+        "product_id":  "P6001",
+        "dummyjson_id":  34,
+        "source_title":  "Nescafe Coffee",
+        "source_category":  "groceries",
+        "source_brand":  null,
+        "image":  "/product-images/P6001.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/groceries/nescafe-coffee/thumbnail.webp"
+    },
+    {
+        "product_id":  "P6002",
+        "dummyjson_id":  27,
+        "source_title":  "Honey Jar",
+        "source_category":  "groceries",
+        "source_brand":  null,
+        "image":  "/product-images/P6002.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/groceries/honey-jar/thumbnail.webp"
+    },
+    {
+        "product_id":  "P6003",
+        "dummyjson_id":  36,
+        "source_title":  "Protein Powder",
+        "source_category":  "groceries",
+        "source_brand":  null,
+        "image":  "/product-images/P6003.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/groceries/protein-powder/thumbnail.webp"
+    },
+    {
+        "product_id":  "P6004",
+        "dummyjson_id":  39,
+        "source_title":  "Soft Drinks",
+        "source_category":  "groceries",
+        "source_brand":  null,
+        "image":  "/product-images/P6004.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/groceries/soft-drinks/thumbnail.webp"
+    },
+    {
+        "product_id":  "P7001",
+        "dummyjson_id":  152,
+        "source_title":  "Tennis Racket",
+        "source_category":  "sports-accessories",
+        "source_brand":  null,
+        "image":  "/product-images/P7001.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/sports-accessories/tennis-racket/thumbnail.webp"
+    },
+    {
+        "product_id":  "P7002",
+        "dummyjson_id":  43,
+        "source_title":  "Decoration Swing",
+        "source_category":  "home-decoration",
+        "source_brand":  null,
+        "image":  "/product-images/P7002.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/home-decoration/decoration-swing/thumbnail.webp"
+    },
+    {
+        "product_id":  "P7003",
+        "dummyjson_id":  137,
+        "source_title":  "American Football",
+        "source_category":  "sports-accessories",
+        "source_brand":  null,
+        "image":  "/product-images/P7003.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/sports-accessories/american-football/thumbnail.webp"
+    },
+    {
+        "product_id":  "P7004",
+        "dummyjson_id":  152,
+        "source_title":  "Tennis Racket",
+        "source_category":  "sports-accessories",
+        "source_brand":  null,
+        "image":  "/product-images/P7004.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/sports-accessories/tennis-racket/thumbnail.webp"
+    },
+    {
+        "product_id":  "P7005",
+        "dummyjson_id":  144,
+        "source_title":  "Cricket Helmet",
+        "source_category":  "sports-accessories",
+        "source_brand":  null,
+        "image":  "/product-images/P7005.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/sports-accessories/cricket-helmet/thumbnail.webp"
+    },
+    {
+        "product_id":  "P8001",
+        "dummyjson_id":  44,
+        "source_title":  "Family Tree Photo Frame",
+        "source_category":  "home-decoration",
+        "source_brand":  null,
+        "image":  "/product-images/P8001.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/home-decoration/family-tree-photo-frame/thumbnail.webp"
+    },
+    {
+        "product_id":  "P8002",
+        "dummyjson_id":  64,
+        "source_title":  "Knife",
+        "source_category":  "kitchen-accessories",
+        "source_brand":  null,
+        "image":  "/product-images/P8002.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/kitchen-accessories/knife/thumbnail.webp"
+    },
+    {
+        "product_id":  "P8003",
+        "dummyjson_id":  49,
+        "source_title":  "Black Aluminium Cup",
+        "source_category":  "kitchen-accessories",
+        "source_brand":  null,
+        "image":  "/product-images/P8003.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/kitchen-accessories/black-aluminium-cup/thumbnail.webp"
+    },
+    {
+        "product_id":  "P8004",
+        "dummyjson_id":  73,
+        "source_title":  "Spice Rack",
+        "source_category":  "kitchen-accessories",
+        "source_brand":  null,
+        "image":  "/product-images/P8004.webp",
+        "source_image":  "https://cdn.dummyjson.com/product-images/kitchen-accessories/spice-rack/thumbnail.webp"
+    }
+]
