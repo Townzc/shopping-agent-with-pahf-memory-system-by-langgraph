@@ -376,12 +376,14 @@ class CatalogStore:
             rows = cur.fetchall()
         q_units = _search_units(query)
         scored: List[tuple] = []
+        filtered: List[Dict[str, Any]] = []
         for row in rows:
             product = self._product_row(row)
             if category and category.lower() not in product["category"].lower():
                 continue
             if max_price is not None and product["price"] > max_price:
                 continue
+            filtered.append(product)
             haystack = " ".join(
                 [
                     product["title"],
@@ -399,6 +401,12 @@ class CatalogStore:
             scored.append((score, product))
         scored.sort(key=lambda x: (x[0], x[1]["rating"]), reverse=True)
         results = [p for _, p in scored[: max(1, top_k)]]
+        if not results and filtered:
+            # Generic phrasing ("我想买东西" / "帮我看看有什么") has no keyword overlap
+            # with any product -- fall back to top-rated matches instead of leaving
+            # the customer (and the model) with nothing to work with.
+            filtered.sort(key=lambda p: (p["rating"], p["rating_count"]), reverse=True)
+            results = filtered[: max(1, top_k)]
         for product in results:
             product["in_stock"] = self.product_in_stock(product["product_id"])
         return results
@@ -409,6 +417,43 @@ class CatalogStore:
                 "SELECT DISTINCT category FROM products WHERE status = 'active' ORDER BY category"
             ).fetchall()
         return [r["category"] for r in rows]
+
+    def browse_catalog(self, category: Optional[str] = None, limit: int = 12) -> Dict[str, Any]:
+        """Whole-catalog snapshot for broad "what do you sell/have" queries.
+
+        Unlike ``search_products`` (exact keyword overlap, can return zero hits
+        for generic phrasing), this always returns something: total active
+        product count, a category breakdown, and a rating-ranked sample of
+        products, optionally scoped to one category.
+        """
+        with self._connect() as conn:
+            rows = conn.execute("SELECT * FROM products WHERE status = 'active'").fetchall()
+
+        all_products = [self._product_row(r) for r in rows]
+        category_counts: Dict[str, int] = {}
+        for product in all_products:
+            category_counts[product["category"]] = category_counts.get(product["category"], 0) + 1
+
+        matched = all_products
+        if category:
+            needle = category.strip().lower()
+            matched = [p for p in all_products if needle in p["category"].lower()]
+
+        matched.sort(key=lambda p: (p["rating"], p["rating_count"]), reverse=True)
+        sample = matched[: max(1, min(limit, 50))]
+        for product in sample:
+            product["in_stock"] = self.product_in_stock(product["product_id"])
+
+        return {
+            "total_active_products": len(all_products),
+            "categories": [
+                {"category": c, "count": n}
+                for c, n in sorted(category_counts.items(), key=lambda kv: (-kv[1], kv[0]))
+            ],
+            "matched_category": category,
+            "matched_count": len(matched),
+            "products": sample,
+        }
 
     def admin_summary(self) -> Dict[str, Any]:
         """Aggregate catalog/order metrics for the backoffice dashboard."""

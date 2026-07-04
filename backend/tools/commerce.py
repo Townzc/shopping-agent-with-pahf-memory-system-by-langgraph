@@ -7,6 +7,8 @@ from typing import Any, Dict
 from .registry import ToolRegistry, ToolSpec
 from .catalog_store import CatalogStore
 from .schemas import (
+    BrowseCatalogInput,
+    BrowseCatalogOutput,
     ProductSearchInput,
     ProductSearchOutput,
     GetProductInput,
@@ -32,6 +34,9 @@ from .schemas import (
 
 def register_commerce_tools(registry: ToolRegistry, catalog: CatalogStore) -> None:
     """Register virtual-store tools so the agent can answer shopping questions."""
+
+    def browse_catalog_tool(args: BrowseCatalogInput) -> Dict[str, Any]:
+        return catalog.browse_catalog(category=args.category, limit=args.limit)
 
     def product_search_tool(args: ProductSearchInput) -> Dict[str, Any]:
         hits = catalog.search_products(
@@ -88,6 +93,19 @@ def register_commerce_tools(registry: ToolRegistry, catalog: CatalogStore) -> No
         )
 
     specs = [
+        ToolSpec(
+            name="browse_catalog",
+            description=(
+                "Browse the whole shop catalog: total active product count, a "
+                "category breakdown, and a rating-ranked sample of products, "
+                "optionally scoped to one category. Use this for broad "
+                "'what do you sell/have' questions where product_search's exact "
+                "keyword match would return nothing."
+            ),
+            input_model=BrowseCatalogInput,
+            output_model=BrowseCatalogOutput,
+            handler=browse_catalog_tool,
+        ),
         ToolSpec(
             name="product_search",
             description="Search the shop catalog by keyword, optional category and max price.",

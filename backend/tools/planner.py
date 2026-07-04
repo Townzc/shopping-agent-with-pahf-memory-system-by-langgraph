@@ -120,6 +120,14 @@ class ToolPlanner:
     _ORDER_KW = ["订单", "order", "查单", "我的单"]
     _COUPON_KW = ["优惠券", "优惠", "折扣", "促销", "满减", "coupon", "discount", "voucher"]
     _RECOMMEND_KW = ["推荐", "recommend", "帮我选", "选购建议", "有什么好"]
+    _BROWSE_KW = [
+        "有哪些商品", "有什么商品", "都有什么", "都卖什么", "卖什么", "商品列表", "有哪些产品",
+        "有哪些东西", "看看有什么", "逛逛", "逛一下", "介绍一下你们的商品", "介绍一下店铺",
+        "介绍一下商品", "介绍一下你们店", "店里有什么", "商城有什么", "都有哪些",
+        "what do you have", "what do you sell", "what products", "what items",
+        "show me your catalog", "your catalog", "browse your", "what's in stock",
+        "what is available", "what's available",
+    ]
     _INVENTORY_KW = ["库存", "有货", "有没有货", "还有吗", "现货", "in stock", "stock"]
     _DETAIL_KW = ["详情", "规格", "参数", "配置", "介绍一下", "detail", "spec"]
     _SEARCH_KW = ["买", "购买", "有没有", "多少钱", "价格", "想要", "卖", "找", "有卖", "求推荐",
@@ -186,6 +194,13 @@ class ToolPlanner:
                 tool="recommend_products",
                 arguments={"customer_id": user_id, "query": user_message.strip(), "top_k": 4},
                 reason="User asks for product recommendations.",
+            )
+        elif hit(self._BROWSE_KW):
+            intent = "catalog_browse"
+            call = ToolCall(
+                tool="browse_catalog",
+                arguments={"limit": 12},
+                reason="User asks broadly what the shop sells, not a specific keyword search.",
             )
         elif hit(self._INVENTORY_KW) and (sku_code or product_id):
             intent = "inventory_check"

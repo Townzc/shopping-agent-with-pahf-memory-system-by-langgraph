@@ -70,3 +70,31 @@ def test_cart_checkout_creates_pending_payment_order(tmp_path):
     assert order["items"][0]["qty"] == 2
     assert catalog.get_cart("c9001")["item_count"] == 0
     assert any(row["order_id"] == order["order_id"] for row in catalog.list_orders("c9001", limit=20))
+
+
+def test_browse_catalog_gives_whole_market_visibility(tmp_path):
+    catalog = CatalogStore(db_path=str(tmp_path / "catalog.db"), auto_seed=True)
+
+    overview = catalog.browse_catalog(limit=5)
+    assert overview["total_active_products"] >= 40
+    assert overview["categories"]
+    assert len(overview["products"]) == 5
+
+    scoped = catalog.browse_catalog(category="数码3C", limit=3)
+    assert scoped["matched_category"] == "数码3C"
+    assert scoped["matched_count"] > 0
+    assert all(p["category"] == "数码3C" for p in scoped["products"])
+
+
+def test_search_products_falls_back_instead_of_empty_for_generic_phrasing(tmp_path):
+    catalog = CatalogStore(db_path=str(tmp_path / "catalog.db"), auto_seed=True)
+
+    # No keyword in "我想买东西" overlaps with any real product title/description,
+    # so a strict search would return nothing -- it should fall back to
+    # top-rated products instead of leaving the customer empty-handed.
+    hits = catalog.search_products(query="我想买东西", top_k=3)
+    assert hits
+
+    # An exact match still ranks its real hit first (no behavior change there).
+    exact = catalog.search_products(query="降噪耳机", top_k=1)
+    assert exact[0]["product_id"] == "P1002"

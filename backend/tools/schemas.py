@@ -97,6 +97,19 @@ class ProductSearchOutput(BaseModel):
     hits: List[Dict[str, Any]] = Field(default_factory=list)
 
 
+class BrowseCatalogInput(BaseModel):
+    category: Optional[str] = None
+    limit: int = Field(default=12, ge=1, le=50)
+
+
+class BrowseCatalogOutput(BaseModel):
+    total_active_products: int
+    categories: List[Dict[str, Any]] = Field(default_factory=list)
+    matched_category: Optional[str] = None
+    matched_count: int = 0
+    products: List[Dict[str, Any]] = Field(default_factory=list)
+
+
 class GetProductInput(BaseModel):
     product_id: str = Field(..., min_length=1)
 
