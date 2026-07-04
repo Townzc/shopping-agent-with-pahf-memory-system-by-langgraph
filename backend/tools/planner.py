@@ -125,7 +125,12 @@ class ToolPlanner:
                      "适合我", "怎么选", "送什么", "what should i buy", "which one should"]
     # Words that turn a mentioned need/scenario ("爬山", "新生儿") into a
     # shopping request worth recommending for.
-    _WANTISH_KW = ["喜欢", "爱好", "想要", "需要", "什么", "哪些", "有没有", "适合", "准备", "打算"]
+    _WANTISH_KW = ["喜欢", "爱好", "想", "需要", "什么", "哪些", "有没有", "适合", "准备", "打算",
+                   "买", "礼物", "送"]
+    # After-sales phrasing means the customer is dealing with a past purchase,
+    # not shopping -- the need+wantish recommend shortcut must stand down.
+    # NB: "我买的" not bare "买的", which also matches "可以给宝贝买的吗".
+    _AFTER_SALES_KW = ["退", "坏", "维修", "投诉", "故障", "换货", "我买的", "之前买", "刚买", "已经买", "已购"]
     _BROWSE_KW = [
         "有哪些商品", "有什么商品", "都有什么", "都卖什么", "卖什么", "商品列表", "有哪些产品",
         "有哪些东西", "看看有什么", "逛逛", "逛一下", "介绍一下你们的商品", "介绍一下店铺",
@@ -197,10 +202,11 @@ class ToolPlanner:
         elif hit(self._RECOMMEND_KW) or (
             # A need/scenario ("爬山", "孩子刚出生") plus want-ish phrasing is a
             # recommendation request even without an explicit "推荐" -- but any
-            # concrete id means the user is after that object, so id-based
-            # branches below must win instead.
+            # concrete id means the user is after that object, and after-sales
+            # phrasing means a past purchase, so those branches must win.
             hit(ALL_NEED_TRIGGERS)
             and hit(self._WANTISH_KW)
+            and not hit(self._AFTER_SALES_KW)
             and not (sku_code or product_id or order_id)
         ):
             intent = "product_recommend"

@@ -43,6 +43,10 @@ def test_need_based_queries_route_to_recommender():
         "那我喜欢爬山，我可以在这个店铺买些什么呢",
         "我喜欢爬山",
         "有什么适合送长辈的",
+        "我是一个孩子的妈妈，请问有什么可以给宝贝买的吗",
+        "有什么可以给宝贝买的吗",
+        "给娃买点什么好",
+        "想给女儿买个礼物",
     ]:
         assert _plan_tool(message) == "recommend_products", message
 
@@ -52,6 +56,13 @@ def test_need_words_do_not_hijack_id_based_queries():
     # the customer is after that object -- id branches must keep winning.
     assert _plan_tool("P1002 这个耳机有没有货") == "check_inventory"
     assert _plan_tool("SO20260012 物流到哪了") == "track_shipment"
+
+
+def test_after_sales_phrasing_is_not_treated_as_shopping():
+    # A broken past purchase mentions need triggers (手机/孩子) and want-ish
+    # words, but it's after-sales -- recommending new products would be tone-deaf.
+    assert _plan_tool("我买的手机坏了要退款") != "recommend_products"
+    assert _plan_tool("孩子的推车坏了怎么换货") != "recommend_products"
 
 
 def test_node_injects_pahf_memories_as_preference_context():
