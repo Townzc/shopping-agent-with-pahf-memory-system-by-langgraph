@@ -439,15 +439,17 @@ export default function AdminDashboard({ onAuthExpired }: AdminDashboardProps) {
       {activeTab === "users" && (
         <section className="admin-view">
           <div className="admin-section-head">
-            <h2>管理员账号</h2>
+            <h2>账号管理</h2>
             <span>{users.length} 个账号</span>
           </div>
           <AdminTable
-            columns={["账号", "显示名", "角色", "创建时间", "最近登录"]}
+            columns={["类型", "账号", "显示名", "角色/等级", "联系方式", "创建时间", "最近登录"]}
             rows={users.map((item) => [
+              item.account_type === "customer" ? "顾客" : "管理员",
               item.username,
               item.display_name,
               item.role,
+              item.account_type === "customer" ? item.phone || item.email || "-" : "-",
               formatTime(item.created_at),
               formatTime(item.last_login_at),
             ])}

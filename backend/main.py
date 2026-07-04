@@ -260,6 +260,15 @@ class CustomerLoginRequest(BaseModel):
     password: str = Field(..., min_length=1, max_length=200)
 
 
+class CustomerRegisterRequest(BaseModel):
+    """Customer self-registration payload."""
+    customer_id: str = Field(..., min_length=3, max_length=32, pattern=r"^[A-Za-z0-9_-]+$")
+    password: str = Field(..., min_length=6, max_length=200)
+    name: str = Field(..., min_length=1, max_length=80)
+    email: str = Field(default="", max_length=160)
+    phone: str = Field(default="", max_length=40)
+
+
 class CustomerUserResponse(BaseModel):
     customer_id: str
     name: str
@@ -529,6 +538,22 @@ async def customer_login(request: CustomerLoginRequest):
     return CustomerLoginResponse(customer=CustomerUserResponse(**customer))
 
 
+@app.post("/api/v1/auth/customer-register", response_model=CustomerLoginResponse)
+async def customer_register(request: CustomerRegisterRequest):
+    """Create a storefront customer account and return the logged-in profile."""
+    try:
+        customer = _require_catalog_store().create_customer_account(
+            customer_id=request.customer_id,
+            password=request.password,
+            name=request.name,
+            email=request.email,
+            phone=request.phone,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return CustomerLoginResponse(customer=CustomerUserResponse(**customer))
+
+
 @app.post("/api/v1/auth/login", response_model=AdminLoginResponse)
 async def admin_login(request: AdminLoginRequest):
     """Authenticate a backoffice administrator."""
@@ -606,7 +631,18 @@ async def admin_feedback_ratings(limit: int = 100, current_admin: dict = Depends
 
 @app.get("/api/v1/admin/users")
 async def admin_users(current_admin: dict = Depends(_require_admin)):
-    return {"users": _get_admin_store().list_users()}
+    _require_backoffice_runtime()
+    admin_accounts = [
+        {
+            **item,
+            "account_type": "admin",
+            "email": "",
+            "phone": "",
+        }
+        for item in _get_admin_store().list_users()
+    ]
+    customer_accounts = RT.catalog_store.list_customer_accounts_for_admin(limit=500)
+    return {"users": admin_accounts + customer_accounts}
 
 
 # ------------------------------------------------ review & potential analytics

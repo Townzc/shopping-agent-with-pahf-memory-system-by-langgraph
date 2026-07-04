@@ -51,6 +51,25 @@ class ReturnRequest(BaseModel):
     reason: str = Field(default="用户在商城端申请售后", min_length=1)
 
 
+class CartAddRequest(BaseModel):
+    customer_id: str = Field(..., min_length=1)
+    product_id: str = Field(..., min_length=1)
+    sku_code: str = ""
+    qty: int = Field(default=1, ge=1, le=99)
+
+
+class CartUpdateRequest(BaseModel):
+    customer_id: str = Field(..., min_length=1)
+    sku_code: str = Field(..., min_length=1)
+    qty: int = Field(default=1, ge=0, le=99)
+
+
+class CartCheckoutRequest(BaseModel):
+    customer_id: str = Field(..., min_length=1)
+    shipping_address: str = ""
+    shipping_method: str = "待选择"
+
+
 class MessageFeedbackRequest(BaseModel):
     conversation_id: str = Field(..., min_length=1)
     message_id: int
@@ -177,6 +196,60 @@ async def shop_create_return(req: ReturnRequest):
     if not result.get("created"):
         raise HTTPException(status_code=400, detail=result)
     return result
+
+
+# --------------------------------------------------------------- cart/order
+def _cart_error(exc: ValueError) -> HTTPException:
+    detail = str(exc)
+    if detail == "customer_not_found":
+        return HTTPException(status_code=404, detail="customer not found")
+    if detail in {"sku_not_found", "product_not_found"}:
+        return HTTPException(status_code=404, detail="sku or product not found")
+    if detail == "sku_out_of_stock" or detail.startswith("insufficient_stock"):
+        return HTTPException(status_code=409, detail=detail)
+    if detail == "cart_empty":
+        return HTTPException(status_code=400, detail="cart is empty")
+    return HTTPException(status_code=400, detail=detail)
+
+
+@router.get("/api/v1/shop/cart")
+async def shop_cart(customer_id: str):
+    return RT.catalog_store.get_cart(customer_id)
+
+
+@router.post("/api/v1/shop/cart/items")
+async def shop_add_cart_item(req: CartAddRequest):
+    try:
+        return RT.catalog_store.add_cart_item(
+            customer_id=req.customer_id,
+            product_id=req.product_id,
+            sku_code=req.sku_code,
+            qty=req.qty,
+        )
+    except ValueError as exc:
+        raise _cart_error(exc)
+
+
+@router.put("/api/v1/shop/cart/items")
+async def shop_update_cart_item(req: CartUpdateRequest):
+    return RT.catalog_store.update_cart_item(req.customer_id, req.sku_code, req.qty)
+
+
+@router.delete("/api/v1/shop/cart")
+async def shop_clear_cart(customer_id: str):
+    return RT.catalog_store.clear_cart(customer_id)
+
+
+@router.post("/api/v1/shop/cart/checkout")
+async def shop_checkout_cart(req: CartCheckoutRequest):
+    try:
+        return RT.catalog_store.checkout_cart(
+            customer_id=req.customer_id,
+            shipping_address=req.shipping_address,
+            shipping_method=req.shipping_method,
+        )
+    except ValueError as exc:
+        raise _cart_error(exc)
 
 
 # ----------------------------------------------------- customer chat (REST)
