@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { MouseEvent } from "react";
 import type {
   Product,
   ConvMessage,
@@ -8,6 +9,8 @@ import type {
   ReviewStats,
   OrderLite,
   Shipment,
+  Cart,
+  CartItem,
 } from "./shopTypes";
 import {
   fetchCategories,
@@ -15,6 +18,11 @@ import {
   fetchProductDetail,
   fetchCustomerOrders,
   fetchOrderShipment,
+  fetchCart,
+  addCartItem,
+  updateCartItem,
+  clearCart,
+  checkoutCart,
   createReturnRequest,
   customerSocketUrl,
   fetchFeedbackTags,
@@ -45,6 +53,10 @@ function emojiFor(category: string): string {
 
 function yuan(n: number): string {
   return `¥${n.toFixed(0)}`;
+}
+
+function specText(attrs: Record<string, string> = {}): string {
+  return Object.values(attrs).filter(Boolean).join(" / ") || "默认规格";
 }
 
 function timeAgo(ts: number): string {
@@ -626,6 +638,10 @@ export default function Storefront({
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [orderNotice, setOrderNotice] = useState("");
   const [activeShipment, setActiveShipment] = useState<Shipment | null>(null);
+  const [cartOpen, setCartOpen] = useState(false);
+  const [cart, setCart] = useState<Cart | null>(null);
+  const [cartBusy, setCartBusy] = useState(false);
+  const [cartNotice, setCartNotice] = useState("");
 
   useEffect(() => {
     fetchCategories().then(setCategories).catch(() => setCategories([]));
@@ -656,6 +672,16 @@ export default function Storefront({
       .finally(() => setOrdersLoading(false));
   }, [customerId]);
 
+  const loadCart = useCallback(() => {
+    if (!customerId.trim()) return;
+    fetchCart(customerId.trim())
+      .then(setCart)
+      .catch(() => {
+        setCart(null);
+        setCartNotice("购物车加载失败，请稍后重试。");
+      });
+  }, [customerId]);
+
   useEffect(() => {
     load();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -663,6 +689,10 @@ export default function Storefront({
   useEffect(() => {
     if (ordersOpen) loadOrders();
   }, [ordersOpen, loadOrders]);
+
+  useEffect(() => {
+    loadCart();
+  }, [loadCart]);
 
   const filteredProducts = useMemo(() => {
     const min = Number(minPrice);
@@ -700,6 +730,80 @@ export default function Storefront({
   const askAbout = (p: Product) => {
     setPrefill(`我想咨询「${p.title}」(${p.product_id})`);
     setDetail(null);
+  };
+
+  const addProductToCart = async (p: Product, event?: MouseEvent<HTMLButtonElement>, skuCode = "") => {
+    event?.stopPropagation();
+    if (!customerId.trim() || cartBusy) return;
+    setCartBusy(true);
+    setCartNotice("");
+    try {
+      const next = await addCartItem({
+        customerId: customerId.trim(),
+        productId: p.product_id,
+        skuCode,
+        qty: 1,
+      });
+      setCart(next);
+      setCartNotice(`已加入购物车：${p.title}`);
+      setCartOpen(true);
+    } catch {
+      setCartNotice("加入购物车失败，请确认商品有货后再试。");
+    } finally {
+      setCartBusy(false);
+    }
+  };
+
+  const changeCartQty = async (item: CartItem, qty: number) => {
+    if (cartBusy) return;
+    setCartBusy(true);
+    setCartNotice("");
+    try {
+      const next = await updateCartItem({
+        customerId: customerId.trim(),
+        skuCode: item.sku_code,
+        qty,
+      });
+      setCart(next);
+    } catch {
+      setCartNotice("购物车数量更新失败，请稍后重试。");
+    } finally {
+      setCartBusy(false);
+    }
+  };
+
+  const clearCurrentCart = async () => {
+    if (cartBusy || !customerId.trim()) return;
+    setCartBusy(true);
+    setCartNotice("");
+    try {
+      const next = await clearCart(customerId.trim());
+      setCart(next);
+    } catch {
+      setCartNotice("清空购物车失败，请稍后重试。");
+    } finally {
+      setCartBusy(false);
+    }
+  };
+
+  const checkoutCurrentCart = async () => {
+    if (cartBusy || !customerId.trim() || !cart?.items.length) return;
+    setCartBusy(true);
+    setCartNotice("");
+    try {
+      const order = await checkoutCart({
+        customerId: customerId.trim(),
+        shippingAddress: "课堂演示默认地址",
+        shippingMethod: "待选择",
+      });
+      setCart({ customer_id: customerId.trim(), items: [], total: 0, currency: "CNY", item_count: 0 });
+      setCartNotice(`已生成待付款订单 ${order.order_id}，付款功能暂未接入。`);
+      loadOrders();
+    } catch {
+      setCartNotice("生成订单失败，请确认购物车商品库存充足。");
+    } finally {
+      setCartBusy(false);
+    }
   };
 
   const openOrders = () => {
@@ -757,6 +861,9 @@ export default function Storefront({
         </div>
         <button className="store-order-btn" onClick={openOrders}>
           我的订单
+        </button>
+        <button className="store-order-btn cart" onClick={() => setCartOpen(true)}>
+          购物车 {cart?.item_count ?? 0}
         </button>
         <label className={`store-cust ${lockedCustomerId ? "locked" : ""}`}>
           <span>{customerName ? `顾客：${customerName}` : "顾客ID"}</span>
@@ -822,19 +929,28 @@ export default function Storefront({
       ) : (
         <div className="product-grid">
           {filteredProducts.map((p) => (
-            <div key={p.product_id} className="product-card" onClick={() => openDetail(p.product_id)}>
-              <ProductVisual product={p} />
-              <div className="product-title">{p.title}</div>
-              <div className="product-brand">{p.brand} · {p.category}</div>
-              <div className="product-row">
-                <span className="price">{yuan(p.price)}</span>
-                <span className="rating">★ {p.rating.toFixed(1)}</span>
-              </div>
-              <div className="product-sales">{p.rating_count.toLocaleString("zh-CN")} 人评价</div>
+            <article key={p.product_id} className="product-card">
+              <button type="button" className="product-open" onClick={() => openDetail(p.product_id)}>
+                <ProductVisual product={p} />
+                <div className="product-title">{p.title}</div>
+                <div className="product-brand">{p.brand} · {p.category}</div>
+                <div className="product-row">
+                  <span className="price">{yuan(p.price)}</span>
+                  <span className="rating">★ {p.rating.toFixed(1)}</span>
+                </div>
+                <div className="product-sales">{p.rating_count.toLocaleString("zh-CN")} 人评价</div>
+              </button>
+              <button
+                className="cart-add-btn"
+                disabled={!p.in_stock || cartBusy}
+                onClick={(event) => void addProductToCart(p, event)}
+              >
+                加入购物车
+              </button>
               <span className={p.in_stock ? "stock ok" : "stock out"}>
                 {p.in_stock ? "有货" : "缺货"}
               </span>
-            </div>
+            </article>
           ))}
           {filteredProducts.length === 0 && <p className="muted store-pad">没有找到相关商品。</p>}
         </div>
@@ -902,9 +1018,12 @@ export default function Storefront({
               <span>质量问题优先转人工</span>
               <span>物流异常可一键咨询订单</span>
             </div>
-            <button className="primary wide" onClick={() => askAbout(detail)}>
-              咨询客服
-            </button>
+            <div className="detail-actions">
+              <button className="primary" disabled={!detail.in_stock || cartBusy} onClick={() => void addProductToCart(detail)}>
+                加入购物车
+              </button>
+              <button onClick={() => askAbout(detail)}>咨询客服</button>
+            </div>
             <ProductReviews productId={detail.product_id} customerId={customerId} />
           </div>
         </div>
@@ -970,6 +1089,76 @@ export default function Storefront({
                 ))}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {cartOpen && (
+        <div className="modal-mask" onClick={() => setCartOpen(false)}>
+          <div className="modal cart-modal" onClick={(e) => e.stopPropagation()}>
+            <button className="icon-btn modal-close" onClick={() => setCartOpen(false)}>
+              ×
+            </button>
+            <div className="order-head">
+              <div>
+                <h2>购物车</h2>
+                <p className="muted">确认商品与数量后，可生成待付款订单；付款功能暂未接入。</p>
+              </div>
+              <button onClick={loadCart} disabled={cartBusy}>
+                刷新
+              </button>
+            </div>
+            {cartNotice && <div className="order-notice">{cartNotice}</div>}
+            <div className="cart-list">
+              {(cart?.items ?? []).map((item) => (
+                <div className="cart-item" key={item.sku_code}>
+                  <img src={item.image_url} alt={item.title} />
+                  <div className="cart-info">
+                    <strong>{item.title}</strong>
+                    <span>{specText(item.attributes)}</span>
+                    <small>
+                      {item.brand} · {item.category}
+                    </small>
+                  </div>
+                  <div className="cart-price">
+                    <span>{yuan(item.unit_price)}</span>
+                    <strong>{yuan(item.line_total)}</strong>
+                  </div>
+                  <div className="cart-qty" aria-label={`${item.title} 数量`}>
+                    <button disabled={cartBusy} onClick={() => void changeCartQty(item, item.qty - 1)}>
+                      -
+                    </button>
+                    <span>{item.qty}</span>
+                    <button
+                      disabled={cartBusy || item.qty >= Math.min(item.stock, 99)}
+                      onClick={() => void changeCartQty(item, item.qty + 1)}
+                    >
+                      +
+                    </button>
+                  </div>
+                  <button className="cart-remove" disabled={cartBusy} onClick={() => void changeCartQty(item, 0)}>
+                    移除
+                  </button>
+                </div>
+              ))}
+              {(cart?.items.length ?? 0) === 0 && <p className="muted store-pad">购物车还是空的，先去挑几件商品吧。</p>}
+            </div>
+            <div className="cart-footer">
+              <button disabled={cartBusy || (cart?.items.length ?? 0) === 0} onClick={() => void clearCurrentCart()}>
+                清空
+              </button>
+              <div>
+                <span>共 {cart?.item_count ?? 0} 件</span>
+                <strong>{yuan(cart?.total ?? 0)}</strong>
+              </div>
+              <button
+                className="primary"
+                disabled={cartBusy || (cart?.items.length ?? 0) === 0}
+                onClick={() => void checkoutCurrentCart()}
+              >
+                去付款
+              </button>
+            </div>
           </div>
         </div>
       )}

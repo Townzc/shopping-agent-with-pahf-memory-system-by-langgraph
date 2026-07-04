@@ -4,10 +4,11 @@ import Storefront from "./Storefront";
 import AgentConsole from "./AgentConsole";
 import App from "./App";
 import AdminDashboard from "./AdminDashboard";
-import { loginAdmin, loginCustomer, logoutAdmin } from "./shopApi";
+import { loginAdmin, loginCustomer, logoutAdmin, registerCustomer } from "./shopApi";
 
 type View = "store" | "console" | "admin" | "debug";
 type PortalRole = "customer" | "merchant";
+type AuthMode = "login" | "register";
 
 interface PortalSession {
   role: PortalRole;
@@ -135,8 +136,12 @@ export default function Root() {
 
 function LoginScreen({ onLogin }: { onLogin: (session: PortalSession) => void }) {
   const [role, setRole] = useState<PortalRole>("customer");
+  const [mode, setMode] = useState<AuthMode>("login");
   const [username, setUsername] = useState("c9001");
   const [password, setPassword] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -144,12 +149,21 @@ function LoginScreen({ onLogin }: { onLogin: (session: PortalSession) => void })
     setRole(nextRole);
     setError("");
     if (nextRole === "customer") {
+      setMode("login");
       setUsername("c9001");
       setPassword("");
     } else {
+      setMode("login");
       setUsername("admin");
       setPassword("");
     }
+  };
+
+  const switchMode = (nextMode: AuthMode) => {
+    setMode(nextMode);
+    setError("");
+    setUsername(nextMode === "register" ? "" : "c9001");
+    setPassword("");
   };
 
   const submit = async (event: FormEvent) => {
@@ -158,7 +172,16 @@ function LoginScreen({ onLogin }: { onLogin: (session: PortalSession) => void })
     setError("");
     try {
       if (role === "customer") {
-        const session = await loginCustomer(username.trim(), password);
+        const session =
+          mode === "register"
+            ? await registerCustomer({
+                customerId: username.trim(),
+                password,
+                name: displayName.trim() || username.trim(),
+                email: email.trim(),
+                phone: phone.trim(),
+              })
+            : await loginCustomer(username.trim(), password);
         onLogin({
           role: "customer",
           username: session.customer.customer_id,
@@ -180,7 +203,13 @@ function LoginScreen({ onLogin }: { onLogin: (session: PortalSession) => void })
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : "登录失败";
-      setError(message.includes("401") ? "账号或密码不正确，请重新输入。" : message);
+      setError(
+        message.includes("401")
+          ? "账号或密码不正确，请重新输入。"
+          : message.includes("400")
+            ? "注册信息不符合要求，账号需 3-32 位字母/数字/下划线/短横线，密码至少 6 位。"
+            : message
+      );
     } finally {
       setLoading(false);
     }
@@ -214,9 +243,42 @@ function LoginScreen({ onLogin }: { onLogin: (session: PortalSession) => void })
             </button>
           </div>
 
+          {role === "customer" && (
+            <div className="portal-mode-switch" aria-label="选择顾客账号操作">
+              <button
+                type="button"
+                className={mode === "login" ? "active" : ""}
+                onClick={() => switchMode("login")}
+              >
+                登录
+              </button>
+              <button
+                type="button"
+                className={mode === "register" ? "active" : ""}
+                onClick={() => switchMode("register")}
+              >
+                注册
+              </button>
+            </div>
+          )}
+
+          {role === "customer" && mode === "register" && (
+            <label>
+              昵称/姓名
+              <input
+                value={displayName}
+                placeholder="例如：李同学"
+                onChange={(event) => setDisplayName(event.target.value)}
+              />
+            </label>
+          )}
           <label>
             账号
-            <input value={username} onChange={(event) => setUsername(event.target.value)} />
+            <input
+              value={username}
+              placeholder={role === "customer" ? "例如：c2026_01" : "admin"}
+              onChange={(event) => setUsername(event.target.value)}
+            />
           </label>
           <label>
             密码
@@ -226,9 +288,27 @@ function LoginScreen({ onLogin }: { onLogin: (session: PortalSession) => void })
               onChange={(event) => setPassword(event.target.value)}
             />
           </label>
+          {role === "customer" && mode === "register" && (
+            <div className="portal-register-grid">
+              <label>
+                手机
+                <input value={phone} placeholder="可选" onChange={(event) => setPhone(event.target.value)} />
+              </label>
+              <label>
+                邮箱
+                <input value={email} placeholder="可选" onChange={(event) => setEmail(event.target.value)} />
+              </label>
+            </div>
+          )}
           {error && <div className="admin-alert">{error}</div>}
           <button className="primary wide" disabled={loading}>
-            {loading ? "登录中..." : "登录系统"}
+            {loading
+              ? mode === "register"
+                ? "注册中..."
+                : "登录中..."
+              : role === "customer" && mode === "register"
+                ? "注册并进入商城"
+                : "登录系统"}
           </button>
           <div className="portal-demo-accounts">
             <span>账号由后端种子数据与管理员库校验</span>

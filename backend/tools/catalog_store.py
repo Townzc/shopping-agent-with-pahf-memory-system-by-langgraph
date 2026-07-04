@@ -160,6 +160,18 @@ class CatalogStore:
                 );
                 CREATE INDEX IF NOT EXISTS idx_returns_order ON return_requests(order_id);
 
+                CREATE TABLE IF NOT EXISTS cart_items (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    customer_id TEXT NOT NULL,
+                    sku_code    TEXT NOT NULL,
+                    product_id  TEXT NOT NULL,
+                    qty         INTEGER NOT NULL,
+                    created_at  REAL NOT NULL,
+                    updated_at  REAL NOT NULL,
+                    UNIQUE(customer_id, sku_code)
+                );
+                CREATE INDEX IF NOT EXISTS idx_cart_customer ON cart_items(customer_id);
+
                 CREATE TABLE IF NOT EXISTS catalog_meta (
                     key   TEXT PRIMARY KEY,
                     value TEXT NOT NULL
@@ -228,6 +240,7 @@ class CatalogStore:
     def _clear_demo_data(conn: sqlite3.Connection) -> None:
         for table in (
             "return_requests",
+            "cart_items",
             "shipments",
             "order_items",
             "orders",
@@ -327,6 +340,27 @@ class CatalogStore:
             "valid_from": float(row["valid_from"]),
             "valid_to": float(row["valid_to"]),
             "active": bool(row["active"]),
+        }
+
+    @staticmethod
+    def _cart_item_row(row: sqlite3.Row) -> Dict[str, Any]:
+        unit_price = float(row["price"])
+        qty = int(row["qty"])
+        return {
+            "customer_id": row["customer_id"],
+            "sku_code": row["sku_code"],
+            "product_id": row["product_id"],
+            "title": row["title"],
+            "brand": row["brand"],
+            "category": row["category"],
+            "image_url": CatalogStore._image_url(row["product_id"], row["image_url"]),
+            "attributes": json.loads(row["attributes_json"] or "{}"),
+            "qty": qty,
+            "unit_price": unit_price,
+            "line_total": round(unit_price * qty, 2),
+            "stock": int(row["stock"]),
+            "in_stock": int(row["stock"]) > 0,
+            "updated_at": float(row["updated_at"]),
         }
 
     # ------------------------------------------------------------- products
@@ -443,6 +477,52 @@ class CatalogStore:
                 return None
         return self._customer_row(row)
 
+    def create_customer_account(
+        self,
+        *,
+        customer_id: str,
+        password: str,
+        name: str,
+        email: str = "",
+        phone: str = "",
+    ) -> Dict[str, Any]:
+        customer_id = customer_id.strip()
+        name = name.strip() or customer_id
+        email = email.strip() or f"{customer_id}@shop.local"
+        phone = phone.strip()
+        if not re.fullmatch(r"[A-Za-z0-9_-]{3,32}", customer_id):
+            raise ValueError("customer_id must be 3-32 characters of letters, numbers, '_' or '-'")
+        if len(password) < 6:
+            raise ValueError("password must contain at least 6 characters")
+
+        now = time.time()
+        with self._connect() as conn:
+            existing = conn.execute(
+                "SELECT customer_id FROM customers WHERE customer_id = ?",
+                (customer_id,),
+            ).fetchone()
+            if existing is not None:
+                raise ValueError("customer_id already exists")
+            conn.execute(
+                """INSERT INTO customers(customer_id, name, email, phone, tier, password_hash, created_at)
+                   VALUES (?,?,?,?,?,?,?)""",
+                (
+                    customer_id,
+                    name,
+                    email,
+                    phone,
+                    "normal",
+                    self._hash_password(password),
+                    now,
+                ),
+            )
+            row = conn.execute(
+                "SELECT * FROM customers WHERE customer_id = ?",
+                (customer_id,),
+            ).fetchone()
+            conn.commit()
+        return self._customer_row(row)
+
     def list_customer_accounts(self, limit: int = 20) -> List[Dict[str, Any]]:
         with self._connect() as conn:
             rows = conn.execute(
@@ -452,6 +532,22 @@ class CatalogStore:
                 (max(1, min(int(limit), 100)),),
             ).fetchall()
         return [self._customer_row(row) for row in rows]
+
+    def list_customer_accounts_for_admin(self, limit: int = 200) -> List[Dict[str, Any]]:
+        customers = self.list_customer_accounts(limit=limit)
+        return [
+            {
+                "account_type": "customer",
+                "username": item["customer_id"],
+                "display_name": item["name"],
+                "role": item["tier"],
+                "email": item["email"],
+                "phone": item["phone"],
+                "created_at": item["created_at"],
+                "last_login_at": None,
+            }
+            for item in customers
+        ]
 
     def list_products_for_admin(self, limit: int = 100) -> List[Dict[str, Any]]:
         with self._connect() as conn:
@@ -575,6 +671,154 @@ class CatalogStore:
                 product["in_stock"] = self.product_in_stock(product["product_id"])
         results = [p for p in pool if p["product_id"] not in exclude and p.get("in_stock", True)]
         return results[: max(1, top_k)]
+
+    # --------------------------------------------------------------- cart
+    def _cart_rows(self, conn: sqlite3.Connection, customer_id: str) -> List[sqlite3.Row]:
+        return conn.execute(
+            """
+            SELECT ci.customer_id, ci.sku_code, ci.product_id, ci.qty, ci.updated_at,
+                   p.title, p.brand, p.category, p.image_url,
+                   s.attributes_json, s.price, s.stock
+            FROM cart_items ci
+            JOIN products p ON p.product_id = ci.product_id
+            JOIN skus s ON s.sku_code = ci.sku_code
+            WHERE ci.customer_id = ?
+            ORDER BY ci.updated_at DESC, ci.id DESC
+            """,
+            (customer_id,),
+        ).fetchall()
+
+    def get_cart(self, customer_id: str) -> Dict[str, Any]:
+        customer_id = customer_id.strip()
+        with self._connect() as conn:
+            rows = self._cart_rows(conn, customer_id)
+        items = [self._cart_item_row(row) for row in rows]
+        total = round(sum(item["line_total"] for item in items), 2)
+        return {
+            "customer_id": customer_id,
+            "items": items,
+            "total": total,
+            "currency": "CNY",
+            "item_count": sum(item["qty"] for item in items),
+        }
+
+    def add_cart_item(
+        self,
+        *,
+        customer_id: str,
+        product_id: str,
+        sku_code: str = "",
+        qty: int = 1,
+    ) -> Dict[str, Any]:
+        customer_id = customer_id.strip()
+        product_id = product_id.strip()
+        qty = max(1, min(int(qty), 99))
+        if not self.get_customer(customer_id):
+            raise ValueError("customer_not_found")
+
+        with self._connect() as conn:
+            if sku_code:
+                sku = conn.execute(
+                    "SELECT * FROM skus WHERE sku_code = ? AND product_id = ? AND status = 'active'",
+                    (sku_code.strip(), product_id),
+                ).fetchone()
+            else:
+                sku = conn.execute(
+                    """SELECT * FROM skus
+                       WHERE product_id = ? AND status = 'active' AND stock > 0
+                       ORDER BY sku_code ASC LIMIT 1""",
+                    (product_id,),
+                ).fetchone()
+            if sku is None:
+                raise ValueError("sku_not_found")
+            if int(sku["stock"]) <= 0:
+                raise ValueError("sku_out_of_stock")
+
+            now = time.time()
+            conn.execute(
+                """
+                INSERT INTO cart_items(customer_id, sku_code, product_id, qty, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(customer_id, sku_code)
+                DO UPDATE SET
+                    qty = MIN(cart_items.qty + excluded.qty, 99),
+                    updated_at = excluded.updated_at
+                """,
+                (customer_id, sku["sku_code"], sku["product_id"], qty, now, now),
+            )
+            conn.commit()
+        return self.get_cart(customer_id)
+
+    def update_cart_item(self, customer_id: str, sku_code: str, qty: int) -> Dict[str, Any]:
+        customer_id = customer_id.strip()
+        sku_code = sku_code.strip()
+        qty = int(qty)
+        with self._connect() as conn:
+            if qty <= 0:
+                conn.execute(
+                    "DELETE FROM cart_items WHERE customer_id = ? AND sku_code = ?",
+                    (customer_id, sku_code),
+                )
+            else:
+                conn.execute(
+                    """UPDATE cart_items
+                       SET qty = ?, updated_at = ?
+                       WHERE customer_id = ? AND sku_code = ?""",
+                    (max(1, min(qty, 99)), time.time(), customer_id, sku_code),
+                )
+            conn.commit()
+        return self.get_cart(customer_id)
+
+    def clear_cart(self, customer_id: str) -> Dict[str, Any]:
+        customer_id = customer_id.strip()
+        with self._connect() as conn:
+            conn.execute("DELETE FROM cart_items WHERE customer_id = ?", (customer_id,))
+            conn.commit()
+        return self.get_cart(customer_id)
+
+    def checkout_cart(
+        self,
+        *,
+        customer_id: str,
+        shipping_address: str = "",
+        shipping_method: str = "待选择",
+    ) -> Dict[str, Any]:
+        customer_id = customer_id.strip()
+        shipping_address = shipping_address.strip() or "用户待填写收货地址"
+        shipping_method = shipping_method.strip() or "待选择"
+        with self._connect() as conn:
+            if not conn.execute("SELECT 1 FROM customers WHERE customer_id = ?", (customer_id,)).fetchone():
+                raise ValueError("customer_not_found")
+            rows = self._cart_rows(conn, customer_id)
+            if not rows:
+                raise ValueError("cart_empty")
+
+            items = [self._cart_item_row(row) for row in rows]
+            for item in items:
+                if item["qty"] > item["stock"]:
+                    raise ValueError(f"insufficient_stock:{item['sku_code']}")
+
+            now = time.time()
+            order_id = f"SO{time.strftime('%Y%m%d', time.localtime(now))}{uuid.uuid4().hex[:6].upper()}"
+            total = round(sum(item["line_total"] for item in items), 2)
+            conn.execute(
+                """INSERT INTO orders(order_id, customer_id, status, total, currency,
+                   shipping_address, shipping_method, created_at, paid_at)
+                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                (order_id, customer_id, "pending_payment", total, "CNY", shipping_address, shipping_method, now, None),
+            )
+            for item in items:
+                conn.execute(
+                    """INSERT INTO order_items(order_id, sku_code, product_id, title_snapshot, qty, unit_price)
+                       VALUES (?,?,?,?,?,?)""",
+                    (order_id, item["sku_code"], item["product_id"], item["title"], item["qty"], item["unit_price"]),
+                )
+            conn.execute("DELETE FROM cart_items WHERE customer_id = ?", (customer_id,))
+            conn.commit()
+        order = self.get_order(order_id)
+        if order is None:
+            raise RuntimeError("checkout order was not created")
+        return order
 
     # --------------------------------------------------------------- orders
     def get_order(self, order_id: str) -> Optional[Dict[str, Any]]:

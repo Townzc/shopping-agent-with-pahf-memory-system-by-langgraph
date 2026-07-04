@@ -22,6 +22,31 @@ export interface Product {
   variants?: ProductVariant[];
 }
 
+export interface CartItem {
+  customer_id: string;
+  sku_code: string;
+  product_id: string;
+  title: string;
+  brand: string;
+  category: string;
+  image_url: string;
+  attributes: Record<string, string>;
+  qty: number;
+  unit_price: number;
+  line_total: number;
+  stock: number;
+  in_stock: boolean;
+  updated_at: number;
+}
+
+export interface Cart {
+  customer_id: string;
+  items: CartItem[];
+  total: number;
+  currency: string;
+  item_count: number;
+}
+
 export type ConvStatus = "bot" | "queued" | "human" | "resolved";
 export type MsgRole = "customer" | "ai" | "agent" | "system";
 

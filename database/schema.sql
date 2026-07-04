@@ -92,6 +92,19 @@ CREATE TABLE IF NOT EXISTS return_requests (
     created_at REAL NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS cart_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    customer_id TEXT NOT NULL,
+    sku_code TEXT NOT NULL,
+    product_id TEXT NOT NULL,
+    qty INTEGER NOT NULL,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    UNIQUE(customer_id, sku_code)
+);
+
+CREATE INDEX IF NOT EXISTS idx_cart_customer ON cart_items(customer_id);
+
 CREATE TABLE IF NOT EXISTS conversations (
     conversation_id TEXT PRIMARY KEY,
     customer_id TEXT NOT NULL,

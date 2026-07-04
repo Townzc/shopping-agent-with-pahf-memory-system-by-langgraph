@@ -12,6 +12,7 @@ import type {
   ProductPotential,
   OrderLite,
   Shipment,
+  Cart,
 } from "./shopTypes";
 
 const DEFAULT_API_BASE = import.meta.env.PROD ? "/server" : "http://localhost:8000";
@@ -119,6 +120,63 @@ export async function fetchOrderShipment(orderId: string, customerId?: string): 
   if (customerId) qs.set("customer_id", customerId);
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
   return request(`/api/v1/shop/orders/${encodeURIComponent(orderId)}/shipment${suffix}`);
+}
+
+export async function fetchCart(customerId: string): Promise<Cart> {
+  const qs = new URLSearchParams({ customer_id: customerId });
+  return request(`/api/v1/shop/cart?${qs.toString()}`);
+}
+
+export async function addCartItem(payload: {
+  customerId: string;
+  productId: string;
+  skuCode?: string;
+  qty?: number;
+}): Promise<Cart> {
+  return request("/api/v1/shop/cart/items", {
+    method: "POST",
+    body: JSON.stringify({
+      customer_id: payload.customerId,
+      product_id: payload.productId,
+      sku_code: payload.skuCode ?? "",
+      qty: payload.qty ?? 1,
+    }),
+  });
+}
+
+export async function updateCartItem(payload: {
+  customerId: string;
+  skuCode: string;
+  qty: number;
+}): Promise<Cart> {
+  return request("/api/v1/shop/cart/items", {
+    method: "PUT",
+    body: JSON.stringify({
+      customer_id: payload.customerId,
+      sku_code: payload.skuCode,
+      qty: payload.qty,
+    }),
+  });
+}
+
+export async function clearCart(customerId: string): Promise<Cart> {
+  const qs = new URLSearchParams({ customer_id: customerId });
+  return request(`/api/v1/shop/cart?${qs.toString()}`, { method: "DELETE" });
+}
+
+export async function checkoutCart(payload: {
+  customerId: string;
+  shippingAddress?: string;
+  shippingMethod?: string;
+}): Promise<OrderLite> {
+  return request("/api/v1/shop/cart/checkout", {
+    method: "POST",
+    body: JSON.stringify({
+      customer_id: payload.customerId,
+      shipping_address: payload.shippingAddress ?? "",
+      shipping_method: payload.shippingMethod ?? "待选择",
+    }),
+  });
 }
 
 export async function createReturnRequest(payload: {
@@ -270,6 +328,9 @@ export interface AdminUser {
   display_name: string;
   created_at: number;
   last_login_at?: number | null;
+  account_type?: "admin" | "customer";
+  email?: string;
+  phone?: string;
 }
 
 export interface CustomerUser {
@@ -351,6 +412,25 @@ export async function loginCustomer(customerId: string, password: string): Promi
   return request("/api/v1/auth/customer-login", {
     method: "POST",
     body: JSON.stringify({ customer_id: customerId, password }),
+  });
+}
+
+export async function registerCustomer(payload: {
+  customerId: string;
+  password: string;
+  name: string;
+  email?: string;
+  phone?: string;
+}): Promise<CustomerLoginResponse> {
+  return request("/api/v1/auth/customer-register", {
+    method: "POST",
+    body: JSON.stringify({
+      customer_id: payload.customerId,
+      password: payload.password,
+      name: payload.name,
+      email: payload.email ?? "",
+      phone: payload.phone ?? "",
+    }),
   });
 }
 
