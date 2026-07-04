@@ -76,6 +76,17 @@ def assistant_generation_node(
     if tools_enabled and tool_planner is not None:
         planner_output = tool_planner.plan(user_id=user_id, user_message=user_message)
         intent = planner_output.intent
+        # Personalize recommendations with PAHF long-term memory: remembered
+        # preferences ("喜欢爬山") ride along as preference_context so the
+        # recommender can favor matching scenarios even when the current
+        # message alone is vague ("随便推荐点什么").
+        memory_context = " ; ".join(
+            m.get("text", "") for m in state.get("retrieved_memories", []) if m.get("text")
+        )[:500]
+        if memory_context:
+            for call in planner_output.plan:
+                if call.tool == "recommend_products" and not call.arguments.get("preference_context"):
+                    call.arguments["preference_context"] = memory_context
         tool_plan = [call.model_dump() for call in planner_output.plan]
         if planner_output.plan and tool_executor is not None:
             plan = [ToolCall.model_validate(item) for item in tool_plan]

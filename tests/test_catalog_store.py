@@ -86,6 +86,56 @@ def test_browse_catalog_gives_whole_market_visibility(tmp_path):
     assert all(p["category"] == "数码3C" for p in scoped["products"])
 
 
+def test_recommend_grounds_newborn_need_in_baby_products(tmp_path):
+    catalog = CatalogStore(db_path=str(tmp_path / "catalog.db"), auto_seed=True)
+
+    recs = catalog.recommend(query="我孩子刚出生，我作为一个单亲妈妈可以在这个店铺买些什么", top_k=4)
+
+    assert recs, "newborn need must produce recommendations"
+    titles = " ".join(r["title"] for r in recs)
+    assert any(kw in titles for kw in ["婴儿", "奶瓶", "拉拉裤", "推车"])
+    # Pet products share the 母婴宠物 category but do not match the need --
+    # they must appear neither as picks nor as "alternatives".
+    assert "猫" not in titles
+    for rec in recs:
+        assert rec["price"] > 0
+        assert rec["reason"]  # explainable recommendation
+        assert "母婴育儿" in rec["need_tags"]
+        for alt in rec["alternatives"]:
+            assert "猫" not in alt["title"]
+            assert alt["difference"]
+
+
+def test_recommend_grounds_hiking_need_in_outdoor_gear(tmp_path):
+    catalog = CatalogStore(db_path=str(tmp_path / "catalog.db"), auto_seed=True)
+
+    recs = catalog.recommend(query="那我喜欢爬山，我可以在这个店铺买些什么呢", top_k=4)
+
+    titles = " ".join(r["title"] for r in recs)
+    assert any(kw in titles for kw in ["帐篷", "露营", "冲锋衣", "头盔"])
+    assert all(r["reason"] for r in recs)
+
+
+def test_recommend_personalizes_from_pahf_preference_context(tmp_path):
+    catalog = CatalogStore(db_path=str(tmp_path / "catalog.db"), auto_seed=True)
+
+    # Vague ask + remembered preference -> outdoor gear, not generic top-rated.
+    recs = catalog.recommend(query="", preference_context="用户喜欢爬山和露营", top_k=3)
+
+    titles = " ".join(r["title"] for r in recs)
+    assert any(kw in titles for kw in ["帐篷", "露营", "冲锋衣", "头盔", "防潮"])
+
+
+def test_recommend_falls_back_to_top_rated_without_signal(tmp_path):
+    catalog = CatalogStore(db_path=str(tmp_path / "catalog.db"), auto_seed=True)
+
+    recs = catalog.recommend(query="", top_k=3)
+
+    assert len(recs) == 3
+    assert all(r["in_stock"] for r in recs)
+    assert all("全店高分热销" in r["reason"] for r in recs)
+
+
 def test_search_products_falls_back_instead_of_empty_for_generic_phrasing(tmp_path):
     catalog = CatalogStore(db_path=str(tmp_path / "catalog.db"), auto_seed=True)
 

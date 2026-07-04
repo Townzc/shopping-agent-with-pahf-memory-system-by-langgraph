@@ -20,6 +20,8 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from .needs import detect_needs
+
 
 DEMO_CATALOG_VERSION = "2026-07-rich-catalog-v3"
 DEMO_CATALOG_MIN_PRODUCTS = 40
@@ -697,25 +699,179 @@ class CatalogStore:
                 rows = []
         return [self._sku_row(r) for r in rows]
 
+    @staticmethod
+    def _price_tier(price: float, category_prices: List[float]) -> str:
+        """Position a product's price within its category for the reason line."""
+        if len(category_prices) < 2:
+            return "同类唯一在售"
+        below = sum(1 for p in category_prices if p < price)
+        pct = below / (len(category_prices) - 1)
+        if pct <= 0.34:
+            return "同类入门价位"
+        if pct <= 0.67:
+            return "同类中端价位"
+        return "同类高端价位"
+
     def recommend(
-        self, query: str = "", exclude_ids: Optional[List[str]] = None, top_k: int = 4
+        self,
+        query: str = "",
+        exclude_ids: Optional[List[str]] = None,
+        top_k: int = 4,
+        preference_context: str = "",
     ) -> List[Dict[str, Any]]:
-        """Lightweight recommendation: query-relevance when provided, otherwise
-        top-rated in-stock products. ``query`` can be seeded from PAHF memory
-        (e.g. the customer's known preferences) by the caller."""
+        """Need-aware recommendation over the whole active catalog.
+
+        Deterministic scoring: scenario needs detected in the message (via
+        ``needs.NEED_RULES``, e.g. 新生儿 -> 母婴, 爬山 -> 户外) pull matching
+        catalog vocabulary forward; direct keyword overlap and rating act as
+        secondary signals. ``preference_context`` carries the customer's PAHF
+        long-term memories so remembered preferences ("喜欢爬山") personalize
+        results at a lower weight than what they asked for right now. Each pick
+        ships with an explainable ``reason`` and same-category ``alternatives``
+        (with price/attribute difference hints) so the assistant can present a
+        professional compare-and-choose answer. Falls back to top-rated
+        in-stock products when no signal matches."""
         exclude = set(exclude_ids or [])
-        pool = self.search_products(query=query, top_k=top_k * 3) if query.strip() else []
-        if not pool:
-            with self._connect() as conn:
-                rows = conn.execute(
-                    "SELECT * FROM products WHERE status = 'active'"
-                ).fetchall()
-            pool = [self._product_row(r) for r in rows]
-            pool.sort(key=lambda p: (p["rating"], p["rating_count"]), reverse=True)
-            for product in pool:
-                product["in_stock"] = self.product_in_stock(product["product_id"])
-        results = [p for p in pool if p["product_id"] not in exclude and p.get("in_stock", True)]
-        return results[: max(1, top_k)]
+        with self._connect() as conn:
+            rows = conn.execute("SELECT * FROM products WHERE status = 'active'").fetchall()
+        products = [self._product_row(r) for r in rows]
+        for product in products:
+            product["in_stock"] = self.product_in_stock(product["product_id"])
+
+        q_units = _search_units(query)
+        query_needs = detect_needs(query)
+        # Memory-derived needs personalize at a discount vs. the live request.
+        pref_needs = [r for r in detect_needs(preference_context) if r not in query_needs]
+
+        def _boost_units(rules: List[Dict[str, Any]]) -> set:
+            return _search_units(" ".join(w for r in rules for w in r["boost"]))
+
+        query_boost = _boost_units(query_needs)
+        pref_boost = _boost_units(pref_needs)
+        query_cats = {c for r in query_needs for c in r["categories"]}
+        pref_cats = {c for r in pref_needs for c in r["categories"]}
+
+        category_prices: Dict[str, List[float]] = {}
+        for product in products:
+            category_prices.setdefault(product["category"], []).append(product["price"])
+
+        has_signal = bool(q_units or query_needs or pref_needs)
+        # Text relevance (keyword/boost hits, no category bonus) per product --
+        # also reused below to keep `alternatives` on-need instead of merely
+        # same-category (a newborn need must not suggest cat food).
+        text_relevance: Dict[str, float] = {}
+        tags_by_id: Dict[str, List[str]] = {}
+        scored: List[tuple] = []
+        for product in products:
+            haystack = " ".join(
+                [
+                    product["title"],
+                    product["brand"],
+                    product["category"],
+                    product["description"],
+                    " ".join(f"{k} {v}" for k, v in product["attributes"].items()),
+                ]
+            ).lower()
+            direct = sum(1 for u in q_units if u in haystack)
+            need_hits = sum(1 for u in query_boost if u in haystack)
+            pref_hits = sum(1 for u in pref_boost if u in haystack)
+            text_rel = direct * 1.0 + need_hits * 2.5 + pref_hits * 1.5
+            text_relevance[product["product_id"]] = text_rel
+            tags_by_id[product["product_id"]] = [
+                r["tag"]
+                for r in query_needs + pref_needs
+                if product["category"] in r["categories"]
+                or any(u in haystack for u in _boost_units([r]))
+            ]
+            if product["product_id"] in exclude:
+                continue
+            relevance = (
+                text_rel
+                + (1.2 if product["category"] in query_cats else 0.0)
+                + (0.6 if product["category"] in pref_cats else 0.0)
+            )
+            # With any signal present, only relevant products compete; the
+            # quality prior alone shouldn't sneak unrelated items in.
+            if has_signal and relevance <= 0:
+                continue
+            score = relevance + product["rating"] * 0.3 + (0.2 if product["in_stock"] else 0.0)
+            scored.append((score, need_hits + pref_hits, product, tags_by_id[product["product_id"]]))
+
+        scored.sort(key=lambda x: (x[0], x[1], x[2]["rating"]), reverse=True)
+        picks = [(p, tags) for _, _, p, tags in scored[: max(1, top_k)]]
+
+        if not picks:  # no signal at all -> top-rated in-stock fallback
+            pool = sorted(products, key=lambda p: (p["rating"], p["rating_count"]), reverse=True)
+            picks = [
+                (p, []) for p in pool if p["product_id"] not in exclude and p["in_stock"]
+            ][: max(1, top_k)]
+
+        picked_ids = {p["product_id"] for p, _ in picks}
+        by_category: Dict[str, List[Dict[str, Any]]] = {}
+        for product in products:
+            by_category.setdefault(product["category"], []).append(product)
+
+        results: List[Dict[str, Any]] = []
+        for product, tags in picks:
+            cat_prices = category_prices.get(product["category"], [])
+            reason_bits = [f"契合「{t}」需求" for t in dict.fromkeys(tags)]
+            if not reason_bits:
+                reason_bits.append("全店高分热销")
+            headline_attr = next(iter(product["attributes"].items()), None)
+            reason_bits.append(f"{product['rating']}★({product['rating_count']}条评价)")
+            if headline_attr:
+                reason_bits.append(f"{headline_attr[0]}:{headline_attr[1]}")
+            reason_bits.append(self._price_tier(product["price"], cat_prices))
+            if not product["in_stock"]:
+                reason_bits.append("暂时缺货,可到货提醒")
+
+            # Same-category siblings = "same kind, subtle differences" so the
+            # assistant can offer a graded choice instead of a single option.
+            # When a need was expressed, siblings must match it on text too --
+            # sharing the 母婴宠物 category is not enough to pitch cat food to
+            # a customer shopping for a newborn.
+            alternatives = []
+            siblings = [
+                s
+                for s in by_category.get(product["category"], [])
+                if s["product_id"] not in picked_ids
+                and s["product_id"] not in exclude
+                and (not has_signal or text_relevance.get(s["product_id"], 0.0) > 0)
+            ]
+            siblings.sort(
+                key=lambda s: (text_relevance.get(s["product_id"], 0.0), s["rating"], s["rating_count"]),
+                reverse=True,
+            )
+            for sibling in siblings[:2]:
+                delta = sibling["price"] - product["price"]
+                if abs(delta) < 1:
+                    diff = "价格相近"
+                elif delta > 0:
+                    diff = f"贵¥{delta:.0f}"
+                else:
+                    diff = f"省¥{-delta:.0f}"
+                sib_attr = next(iter(sibling["attributes"].items()), None)
+                if sib_attr:
+                    diff += f" · {sib_attr[0]}:{sib_attr[1]}"
+                alternatives.append(
+                    {
+                        "product_id": sibling["product_id"],
+                        "title": sibling["title"],
+                        "price": sibling["price"],
+                        "rating": sibling["rating"],
+                        "difference": diff,
+                    }
+                )
+
+            results.append(
+                {
+                    **product,
+                    "reason": " · ".join(reason_bits),
+                    "need_tags": list(dict.fromkeys(tags)),
+                    "alternatives": alternatives,
+                }
+            )
+        return results
 
     # --------------------------------------------------------------- cart
     def _cart_rows(self, conn: sqlite3.Connection, customer_id: str) -> List[sqlite3.Row]:

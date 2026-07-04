@@ -161,6 +161,9 @@ class RecommendInput(BaseModel):
     customer_id: str = Field(..., min_length=1)
     query: str = ""
     top_k: int = Field(default=4, ge=1, le=12)
+    # PAHF long-term memories about this customer (joined text), so remembered
+    # preferences personalize the recommendation at a lower weight than `query`.
+    preference_context: str = ""
 
 
 class RecommendOutput(BaseModel):

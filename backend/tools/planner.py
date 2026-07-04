@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import List
 
+from .needs import ALL_NEED_TRIGGERS
 from .schemas import PlannerOutput, ToolCall
 
 
@@ -119,7 +120,12 @@ class ToolPlanner:
     _ORDER_LIST_KW = ["我的订单", "所有订单", "订单列表", "历史订单", "my orders", "list orders"]
     _ORDER_KW = ["订单", "order", "查单", "我的单"]
     _COUPON_KW = ["优惠券", "优惠", "折扣", "促销", "满减", "coupon", "discount", "voucher"]
-    _RECOMMEND_KW = ["推荐", "recommend", "帮我选", "选购建议", "有什么好"]
+    _RECOMMEND_KW = ["推荐", "recommend", "帮我选", "选购建议", "有什么好",
+                     "买些什么", "买点什么", "买什么", "什么值得买", "有什么适合",
+                     "适合我", "怎么选", "送什么", "what should i buy", "which one should"]
+    # Words that turn a mentioned need/scenario ("爬山", "新生儿") into a
+    # shopping request worth recommending for.
+    _WANTISH_KW = ["喜欢", "爱好", "想要", "需要", "什么", "哪些", "有没有", "适合", "准备", "打算"]
     _BROWSE_KW = [
         "有哪些商品", "有什么商品", "都有什么", "都卖什么", "卖什么", "商品列表", "有哪些产品",
         "有哪些东西", "看看有什么", "逛逛", "逛一下", "介绍一下你们的商品", "介绍一下店铺",
@@ -188,7 +194,15 @@ class ToolPlanner:
         elif hit(self._COUPON_KW):
             intent = "coupon_query"
             call = ToolCall(tool="list_coupons", arguments={}, reason="User asks about coupons/discounts.")
-        elif hit(self._RECOMMEND_KW):
+        elif hit(self._RECOMMEND_KW) or (
+            # A need/scenario ("爬山", "孩子刚出生") plus want-ish phrasing is a
+            # recommendation request even without an explicit "推荐" -- but any
+            # concrete id means the user is after that object, so id-based
+            # branches below must win instead.
+            hit(ALL_NEED_TRIGGERS)
+            and hit(self._WANTISH_KW)
+            and not (sku_code or product_id or order_id)
+        ):
             intent = "product_recommend"
             call = ToolCall(
                 tool="recommend_products",

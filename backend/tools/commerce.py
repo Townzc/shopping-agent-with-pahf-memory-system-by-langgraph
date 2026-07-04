@@ -74,7 +74,11 @@ def register_commerce_tools(registry: ToolRegistry, catalog: CatalogStore) -> No
         return {"found": shipment is not None, "shipment": shipment}
 
     def recommend_tool(args: RecommendInput) -> Dict[str, Any]:
-        recs = catalog.recommend(query=args.query, top_k=args.top_k)
+        recs = catalog.recommend(
+            query=args.query,
+            top_k=args.top_k,
+            preference_context=args.preference_context,
+        )
         return {"recommendations": recs}
 
     def list_coupons_tool(args: ListCouponsInput) -> Dict[str, Any]:

@@ -2,6 +2,9 @@
 browse-catalog fallback for broad "what do you sell" style queries that
 previously fell through to ungrounded general_chat."""
 
+from unittest.mock import Mock
+
+from backend.agents.node_calls import assistant_generation_node
 from backend.tools.planner import ToolPlanner
 
 
@@ -30,3 +33,61 @@ def test_specific_queries_still_route_correctly():
 
 def test_generic_buy_intent_still_routes_to_search():
     assert _plan_tool("我想买东西") == "product_search"
+
+
+def test_need_based_queries_route_to_recommender():
+    """A life-situation/need ("孩子刚出生","喜欢爬山") plus want-ish phrasing is
+    a recommendation request even without an explicit "推荐"."""
+    for message in [
+        "我孩子刚出生，我作为一个单亲妈妈可以在这个店铺买些什么",
+        "那我喜欢爬山，我可以在这个店铺买些什么呢",
+        "我喜欢爬山",
+        "有什么适合送长辈的",
+    ]:
+        assert _plan_tool(message) == "recommend_products", message
+
+
+def test_need_words_do_not_hijack_id_based_queries():
+    # "耳机/手机" are need triggers, but a concrete product/SKU/order id means
+    # the customer is after that object -- id branches must keep winning.
+    assert _plan_tool("P1002 这个耳机有没有货") == "check_inventory"
+    assert _plan_tool("SO20260012 物流到哪了") == "track_shipment"
+
+
+def test_node_injects_pahf_memories_as_preference_context():
+    """assistant_generation_node personalizes recommend_products with the
+    customer's retrieved PAHF memories."""
+    captured = {}
+
+    class _CapturingExecutor:
+        def execute_plan(self, user_id, plan):
+            captured["plan"] = plan
+            return []
+
+    mock_model = Mock()
+    mock_model.chat = Mock(return_value="ok")
+    state = {
+        "user_id": "u1",
+        "user_message": "随便帮我推荐点东西",
+        "retrieved_memories": [{"id": 1, "person_id": "u1", "text": "用户喜欢爬山和露营"}],
+        "pahf_context_text": "",
+        "clarification_question": None,
+        "temperature": None,
+        "max_tokens": None,
+    }
+
+    result = assistant_generation_node(
+        state=state,
+        model_client=mock_model,
+        prompt_builder=None,
+        prompt_scene="default",
+        tool_planner=ToolPlanner(),
+        tool_executor=_CapturingExecutor(),
+        tool_registry=None,
+        tools_enabled=True,
+    )
+
+    assert result["intent"] == "product_recommend"
+    call = captured["plan"][0]
+    assert call.tool == "recommend_products"
+    assert "爬山" in call.arguments["preference_context"]
