@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent, PointerEvent } from "react";
 import type {
   Product,
+  Conversation,
   ConvMessage,
   ConvStatus,
   BusEvent,
@@ -33,6 +34,7 @@ import {
   submitProductReview,
   fetchReviewTags,
 } from "./shopApi";
+import { removeLocalHandoff, upsertLocalHandoff } from "./handoffBridge";
 
 const CATEGORY_EMOJI: Record<string, string> = {
   "数码3C": "📱",
@@ -319,6 +321,7 @@ interface ChatState {
   status: ConvStatus;
   connected: boolean;
   conversationId: string;
+  conversation: Conversation | null;
 }
 
 function useCustomerChat(customerId: string, enabled: boolean) {
@@ -327,8 +330,18 @@ function useCustomerChat(customerId: string, enabled: boolean) {
     status: "bot",
     connected: false,
     conversationId: "",
+    conversation: null,
   });
   const wsRef = useRef<WebSocket | null>(null);
+
+  useEffect(() => {
+    if (!state.conversationId || !state.conversation) return;
+    if (state.status === "queued" || state.status === "human") {
+      upsertLocalHandoff({ ...state.conversation, status: state.status }, state.messages);
+    } else {
+      removeLocalHandoff(state.conversationId);
+    }
+  }, [state.conversation, state.conversationId, state.messages, state.status]);
 
   useEffect(() => {
     if (!enabled || !customerId) return;
@@ -340,21 +353,38 @@ function useCustomerChat(customerId: string, enabled: boolean) {
     ws.onmessage = (ev) => {
       const data = JSON.parse(ev.data) as BusEvent;
       if (data.type === "history") {
-        const conv = data.conversation as { status: ConvStatus; conversation_id: string };
+        const conv = data.conversation as Conversation;
         setState({
           messages: (data.messages as ConvMessage[]) ?? [],
           status: conv?.status ?? "bot",
           connected: true,
           conversationId: conv?.conversation_id ?? "",
+          conversation: conv ?? null,
         });
       } else if (data.type === "message") {
         const msg = data.message as ConvMessage;
         setState((s) => {
           if (s.messages.some((m) => m.id === msg.id)) return s;
-          return { ...s, messages: [...s.messages, msg] };
+          const conversation = s.conversation
+            ? { ...s.conversation, last_message_at: msg.created_at, updated_at: msg.created_at }
+            : s.conversation;
+          return { ...s, conversation, messages: [...s.messages, msg] };
         });
       } else if (data.type === "status") {
-        setState((s) => ({ ...s, status: data.status as ConvStatus }));
+        const nextStatus = data.status as ConvStatus;
+        setState((s) => ({
+          ...s,
+          status: nextStatus,
+          conversation: s.conversation
+            ? {
+                ...s.conversation,
+                status: nextStatus,
+                escalation_reason:
+                  typeof data.reason === "string" ? data.reason : s.conversation.escalation_reason,
+                updated_at: Date.now() / 1000,
+              }
+            : s.conversation,
+        }));
       }
     };
     return () => {

@@ -10,6 +10,7 @@ resolve / AI-suggested reply / 360° context).
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 from typing import Any, Dict, List, Optional
 
@@ -94,6 +95,75 @@ class ChatService:
         except Exception as exc:
             self._log("error", f"memory writeback failed: {exc}")
 
+    def _order_status_label(self, status: str) -> str:
+        return {
+            "pending_payment": "待付款",
+            "paid": "已付款",
+            "shipped": "已发货",
+            "delivered": "已签收",
+            "cancelled": "已取消",
+        }.get(status, status)
+
+    def _shipment_status_label(self, status: str) -> str:
+        return {
+            "pending": "待发货",
+            "in_transit": "运输中",
+            "delivered": "已签收",
+            "exception": "物流异常",
+        }.get(status, status)
+
+    def _maybe_fast_order_reply(self, customer_id: str, content: str) -> Optional[str]:
+        if self.catalog is None:
+            return None
+        text = content.lower()
+        order_keywords = [
+            "订单", "物流", "快递", "发货", "签收", "到哪", "配送",
+            "order", "shipment", "tracking", "delivery", "status",
+        ]
+        if not any(keyword in text for keyword in order_keywords):
+            return None
+        try:
+            order_ids = re.findall(r"\bSO\d{6,}\b", content, flags=re.IGNORECASE)
+            if order_ids:
+                orders = []
+                for order_id in order_ids[:3]:
+                    order = self.catalog.get_order(order_id.upper())
+                    if order and order.get("customer_id") == customer_id:
+                        orders.append(order)
+            else:
+                orders = [
+                    self.catalog.get_order(row["order_id"]) or row
+                    for row in self.catalog.list_orders(customer_id=customer_id, limit=3)
+                ]
+        except Exception as exc:
+            self._log("error", f"fast order lookup failed: {exc}")
+            return None
+        if not orders:
+            return "我暂时没有查到您名下的订单记录。您可以提供订单号，我再帮您核对。"
+
+        lines = ["我帮您查到了最近的订单状态："]
+        for order in orders:
+            item_titles = [item.get("title", "商品") for item in order.get("items", [])[:2]]
+            item_text = "、".join(item_titles) if item_titles else "商品明细"
+            line = (
+                f"- {order['order_id']}：{self._order_status_label(order.get('status', ''))}"
+                f"，{item_text}，金额 ¥{float(order.get('total') or 0):.0f}"
+            )
+            shipment = order.get("shipment")
+            if shipment:
+                line += (
+                    f"，物流 {shipment.get('carrier', '-')}/{shipment.get('tracking_no', '-')}"
+                    f"（{self._shipment_status_label(shipment.get('status', ''))}）"
+                )
+                events = shipment.get("events") or []
+                if events:
+                    line += f"，最新进展：{events[-1].get('desc', '-')}"
+            elif order.get("status") == "pending_payment":
+                line += "，当前还未付款，付款后商家会安排发货"
+            lines.append(line)
+        lines.append("如果您要查某一单的详细物流，直接发送订单号即可。")
+        return "\n".join(lines)
+
     # ----------------------------------------------------- customer messaging
     async def handle_customer_message(self, customer_id: str, content: str) -> Dict[str, Any]:
         conv = self.conversations.get_or_create_active(customer_id)
@@ -122,6 +192,16 @@ class ChatService:
         pre = evaluate_escalation(content, recent_customer_messages=recent)
         if pre.handoff:
             return await self._escalate(conv, pre, ai_draft=None)
+
+        fast_reply = self._maybe_fast_order_reply(customer_id, content)
+        if fast_reply:
+            trace = {"intent": "fast_order_status", "fast_path": True}
+            ai_msg = self.conversations.add_message(
+                cid, role="ai", content=fast_reply, sender="ai", meta={"trace": trace}
+            )
+            await self._emit_conv(cid, {"type": "message", "message": ai_msg})
+            await self._emit_agents({"type": "ai_message", "conversation_id": cid, "message": ai_msg})
+            return {"conversation_id": cid, "status": "bot", "response": fast_reply, "trace": trace}
 
         # Run the AI pipeline (sync graph) off the event loop.
         state = {

@@ -10,6 +10,35 @@ class DummyGraph:
         return {**state, "response": "AI response"}
 
 
+class CountingGraph:
+    def __init__(self):
+        self.calls = 0
+
+    def invoke(self, state):
+        self.calls += 1
+        return {**state, "response": "AI response"}
+
+
+class FakeCatalog:
+    def list_orders(self, customer_id, limit=3):
+        return [{"order_id": "SO20260012"}]
+
+    def get_order(self, order_id):
+        return {
+            "order_id": order_id,
+            "customer_id": "c1005",
+            "status": "shipped",
+            "total": 899.0,
+            "items": [{"title": "降噪耳机"}],
+            "shipment": {
+                "carrier": "SF",
+                "tracking_no": "SF2026070301",
+                "status": "in_transit",
+                "events": [{"desc": "运输中"}],
+            },
+        }
+
+
 @pytest.mark.asyncio
 async def test_handoff_request_survives_store_reopen_and_agent_can_reply(tmp_path):
     db_path = tmp_path / "conversations.db"
@@ -141,3 +170,21 @@ async def test_agent_send_can_restore_claimed_snapshot_on_fresh_serverless_insta
 
     assert reply["role"] == "agent"
     assert fresh_store.get_conversation(conversation_id)["status"] == "human"
+
+
+@pytest.mark.asyncio
+async def test_order_status_uses_fast_path_without_graph_call(tmp_path):
+    graph = CountingGraph()
+    service = ChatService(
+        conversations=ConversationStore(str(tmp_path / "conversations.db")),
+        event_bus=EventBus(),
+        chat_graph=graph,
+        catalog_store=FakeCatalog(),
+    )
+
+    result = await service.handle_customer_message("c1005", "我的订单状态")
+
+    assert result["status"] == "bot"
+    assert result["trace"]["intent"] == "fast_order_status"
+    assert "SO20260012" in result["response"]
+    assert graph.calls == 0

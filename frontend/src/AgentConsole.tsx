@@ -20,6 +20,13 @@ import {
   conversationSocketUrl,
 } from "./shopApi";
 import type { FeedbackSummary } from "./shopApi";
+import {
+  localHandoffContext,
+  localHandoffCounts,
+  mergeHandoffConversations,
+  removeLocalHandoff,
+  upsertLocalHandoff,
+} from "./handoffBridge";
 
 const REASON_LABEL: Record<string, string> = {
   user_requested_human: "用户要求人工",
@@ -119,7 +126,9 @@ export default function AgentConsole({
   }, [agentId, agentName, filter, selectedId]);
 
   const refreshList = useCallback((nextFilter = filter) => {
-    fetchAgentConversations(adminToken, nextFilter).then(setConversations).catch(() => setConversations([]));
+    fetchAgentConversations(adminToken, nextFilter)
+      .then((items) => setConversations(mergeHandoffConversations(items, nextFilter)))
+      .catch(() => setConversations(mergeHandoffConversations([], nextFilter)));
     fetchAgentStats(adminToken).then(setStats).catch(() => undefined);
     fetchFeedbackSummary().then(setFb).catch(() => undefined);
   }, [adminToken, filter]);
@@ -128,8 +137,13 @@ export default function AgentConsole({
     (cid: string) => {
       if (!cid) return;
       fetchAgentContext(adminToken, cid).then(setContext).catch(() => {
-        setContext(null);
-        setSelectedId("");
+        const local = localHandoffContext(cid);
+        if (local) {
+          setContext(local);
+        } else {
+          setContext(null);
+          setSelectedId("");
+        }
       });
     },
     [adminToken]
@@ -139,6 +153,16 @@ export default function AgentConsole({
     refreshList();
     const timer = window.setInterval(refreshList, REFRESH_INTERVAL_MS);
     return () => window.clearInterval(timer);
+  }, [refreshList]);
+
+  useEffect(() => {
+    const handleLocalHandoffs = () => refreshList();
+    window.addEventListener("storage", handleLocalHandoffs);
+    window.addEventListener("servicebot-local-handoffs", handleLocalHandoffs);
+    return () => {
+      window.removeEventListener("storage", handleLocalHandoffs);
+      window.removeEventListener("servicebot-local-handoffs", handleLocalHandoffs);
+    };
   }, [refreshList]);
 
   useEffect(() => {
@@ -220,6 +244,8 @@ export default function AgentConsole({
         conversation: context?.conversation,
         messages: context?.messages,
       });
+      const nextMessages = context?.messages ?? [];
+      upsertLocalHandoff(claimed, nextMessages);
       setContext((current) =>
         current && current.conversation.conversation_id === targetId
           ? { ...current, conversation: claimed }
@@ -243,10 +269,18 @@ export default function AgentConsole({
   const doSend = async () => {
     const text = draft.trim();
     if (!text || !selectedId) return;
-    await sendAgentMessage(adminToken, selectedId, agentId, text, {
+    const msg = await sendAgentMessage(adminToken, selectedId, agentId, text, {
       conversation: context?.conversation,
       messages: context?.messages,
     });
+    if (context?.conversation) {
+      const nextMessages = context.messages.some((m) => m.id === msg.id)
+        ? context.messages
+        : [...context.messages, msg];
+      const nextConversation = { ...context.conversation, last_message_at: msg.created_at, updated_at: msg.created_at };
+      setContext({ ...context, conversation: nextConversation, messages: nextMessages });
+      upsertLocalHandoff(nextConversation, nextMessages);
+    }
     setDraft("");
     refreshContext(selectedId);
   };
@@ -258,6 +292,7 @@ export default function AgentConsole({
   const doRelease = async () => {
     if (!selectedId) return;
     await releaseConversation(adminToken, selectedId, agentId);
+    removeLocalHandoff(selectedId);
     setFilter("queued");
     refreshContext(selectedId);
     refreshList();
@@ -265,13 +300,16 @@ export default function AgentConsole({
   const doResolve = async () => {
     if (!selectedId) return;
     await resolveConversation(adminToken, selectedId, agentId);
+    removeLocalHandoff(selectedId);
     setSelectedId("");
     setContext(null);
     setFilter("queued");
     refreshList();
   };
 
-  const queuedCount = stats.counts.queued ?? 0;
+  const localCounts = localHandoffCounts();
+  const queuedCount = Math.max(stats.counts.queued ?? 0, localCounts.queued ?? 0);
+  const humanCount = Math.max(stats.counts.human ?? 0, localCounts.human ?? 0);
 
   return (
     <div className="console">
@@ -289,7 +327,7 @@ export default function AgentConsole({
         </div>
         <div className="console-stats">
           <span className={queuedCount > 0 ? "pill alert" : "pill"}>排队 {queuedCount}</span>
-          <span className="pill">人工 {stats.counts.human ?? 0}</span>
+          <span className="pill">人工 {humanCount}</span>
           <span className="pill">在线坐席 {stats.online_agents}</span>
         </div>
         {fb && (
