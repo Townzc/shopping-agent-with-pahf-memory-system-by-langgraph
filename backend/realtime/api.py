@@ -335,12 +335,24 @@ async def agent_conversation_detail(conversation_id: str, _admin: dict = Depends
 
 @router.post("/api/v1/agent/conversations/{conversation_id}/claim")
 async def agent_claim(conversation_id: str, req: ClaimRequest, _admin: dict = Depends(require_admin)):
-    return await RT.chat_service.claim(conversation_id, req.agent_id, req.agent_name)
+    try:
+        return await RT.chat_service.claim(conversation_id, req.agent_id, req.agent_name)
+    except ValueError as exc:
+        detail = str(exc)
+        if detail == "conversation_not_found":
+            raise HTTPException(status_code=404, detail=detail)
+        raise HTTPException(status_code=409, detail=detail)
 
 
 @router.post("/api/v1/agent/conversations/{conversation_id}/message")
 async def agent_message(conversation_id: str, req: AgentMessageRequest, _admin: dict = Depends(require_admin)):
-    return await RT.chat_service.agent_send(conversation_id, req.agent_id, req.content)
+    try:
+        return await RT.chat_service.agent_send(conversation_id, req.agent_id, req.content)
+    except ValueError as exc:
+        detail = str(exc)
+        if detail == "conversation_not_found":
+            raise HTTPException(status_code=404, detail=detail)
+        raise HTTPException(status_code=409, detail=detail)
 
 
 @router.post("/api/v1/agent/conversations/{conversation_id}/release")

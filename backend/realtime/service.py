@@ -241,6 +241,11 @@ class ChatService:
     # --------------------------------------------------------- agent actions
     async def claim(self, conversation_id: str, agent_id: str, agent_name: str = "") -> Dict[str, Any]:
         self.register_agent(agent_id, agent_name)
+        existing = self.conversations.get_conversation(conversation_id)
+        if existing is None:
+            raise ValueError("conversation_not_found")
+        if existing["status"] not in {"queued", "human"}:
+            raise ValueError(f"conversation_not_claimable:{existing['status']}")
         conv = self.conversations.assign_agent(conversation_id, agent_id)
         self._agents[agent_id]["active"].add(conversation_id)
         name = self._agents[agent_id]["name"]
@@ -257,6 +262,13 @@ class ChatService:
         return conv
 
     async def agent_send(self, conversation_id: str, agent_id: str, content: str) -> Dict[str, Any]:
+        conv = self.conversations.get_conversation(conversation_id)
+        if conv is None:
+            raise ValueError("conversation_not_found")
+        if conv["status"] != "human":
+            raise ValueError(f"conversation_not_human:{conv['status']}")
+        if conv.get("assigned_agent") and conv["assigned_agent"] != agent_id:
+            raise ValueError("conversation_assigned_to_other_agent")
         name = self._agents.get(agent_id, {}).get("name", agent_id)
         msg = self.conversations.add_message(
             conversation_id, role="agent", content=content, sender=name

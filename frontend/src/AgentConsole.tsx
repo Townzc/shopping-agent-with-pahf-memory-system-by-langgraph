@@ -32,6 +32,27 @@ const REASON_LABEL: Record<string, string> = {
 };
 
 const PRIO_CLASS: Record<number, string> = { 1: "low", 2: "medium", 3: "high", 4: "urgent" };
+const CONSOLE_STATE_KEY = "servicebot_agent_console_state_v1";
+const REFRESH_INTERVAL_MS = 8000;
+
+interface SavedConsoleState {
+  agentId?: string;
+  agentName?: string;
+  filter?: string;
+  selectedId?: string;
+}
+
+function readSavedConsoleState(): SavedConsoleState {
+  if (typeof window === "undefined") return {};
+  const raw = window.localStorage.getItem(CONSOLE_STATE_KEY);
+  if (!raw) return {};
+  try {
+    return JSON.parse(raw) as SavedConsoleState;
+  } catch {
+    window.localStorage.removeItem(CONSOLE_STATE_KEY);
+    return {};
+  }
+}
 
 function statusBadge(s: ConvStatus): string {
   return s === "queued" ? "排队中" : s === "human" ? "人工中" : s === "resolved" ? "已结束" : "AI中";
@@ -55,11 +76,12 @@ export default function AgentConsole({
   initialAgentId = "agent-1",
   initialAgentName = "客服小美",
 }: AgentConsoleProps) {
-  const [agentId, setAgentId] = useState(initialAgentId);
-  const [agentName, setAgentName] = useState(initialAgentName);
-  const [filter, setFilter] = useState<string>("queued");
+  const saved = useRef<SavedConsoleState>(readSavedConsoleState());
+  const [agentId, setAgentId] = useState(saved.current.agentId || initialAgentId);
+  const [agentName, setAgentName] = useState(saved.current.agentName || initialAgentName);
+  const [filter, setFilter] = useState<string>(saved.current.filter || "queued");
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [selectedId, setSelectedId] = useState<string>("");
+  const [selectedId, setSelectedId] = useState<string>(saved.current.selectedId || "");
   const [context, setContext] = useState<AgentContext | null>(null);
   const [draft, setDraft] = useState("");
   const [stats, setStats] = useState<{ counts: Record<string, number>; online_agents: number }>({
@@ -72,9 +94,16 @@ export default function AgentConsole({
   selectedRef.current = selectedId;
 
   useEffect(() => {
-    setAgentId(initialAgentId);
-    setAgentName(initialAgentName);
+    if (!saved.current.agentId) setAgentId(initialAgentId);
+    if (!saved.current.agentName) setAgentName(initialAgentName);
   }, [initialAgentId, initialAgentName]);
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      CONSOLE_STATE_KEY,
+      JSON.stringify({ agentId, agentName, filter, selectedId })
+    );
+  }, [agentId, agentName, filter, selectedId]);
 
   const refreshList = useCallback(() => {
     fetchAgentConversations(adminToken, filter).then(setConversations).catch(() => setConversations([]));
@@ -85,14 +114,25 @@ export default function AgentConsole({
   const refreshContext = useCallback(
     (cid: string) => {
       if (!cid) return;
-      fetchAgentContext(adminToken, cid).then(setContext).catch(() => setContext(null));
+      fetchAgentContext(adminToken, cid).then(setContext).catch(() => {
+        setContext(null);
+        setSelectedId("");
+      });
     },
     [adminToken]
   );
 
   useEffect(() => {
     refreshList();
-  }, [filter, refreshList]);
+    const timer = window.setInterval(refreshList, REFRESH_INTERVAL_MS);
+    return () => window.clearInterval(timer);
+  }, [refreshList]);
+
+  useEffect(() => {
+    if (!selectedId && conversations.length > 0) {
+      setSelectedId(conversations[0].conversation_id);
+    }
+  }, [conversations, selectedId]);
 
   // Agent notification socket: presence + queue/escalation events -> refresh.
   useEffect(() => {
@@ -149,6 +189,7 @@ export default function AgentConsole({
   const doClaim = async () => {
     if (!selectedId) return;
     await claimConversation(adminToken, selectedId, agentId, agentName);
+    setFilter("human");
     refreshContext(selectedId);
     refreshList();
   };
@@ -157,6 +198,7 @@ export default function AgentConsole({
     if (!text || !selectedId) return;
     await sendAgentMessage(adminToken, selectedId, agentId, text);
     setDraft("");
+    refreshContext(selectedId);
   };
   const doSuggest = async () => {
     if (!selectedId) return;
@@ -166,13 +208,16 @@ export default function AgentConsole({
   const doRelease = async () => {
     if (!selectedId) return;
     await releaseConversation(adminToken, selectedId, agentId);
+    setFilter("queued");
     refreshContext(selectedId);
     refreshList();
   };
   const doResolve = async () => {
     if (!selectedId) return;
     await resolveConversation(adminToken, selectedId, agentId);
-    refreshContext(selectedId);
+    setSelectedId("");
+    setContext(null);
+    setFilter("queued");
     refreshList();
   };
 

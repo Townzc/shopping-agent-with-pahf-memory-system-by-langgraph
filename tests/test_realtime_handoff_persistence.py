@@ -1,0 +1,48 @@
+import pytest
+
+from backend.realtime.conversation_store import ConversationStore
+from backend.realtime.events import EventBus
+from backend.realtime.service import ChatService
+
+
+class DummyGraph:
+    def invoke(self, state):
+        return {**state, "response": "AI response"}
+
+
+@pytest.mark.asyncio
+async def test_handoff_request_survives_store_reopen_and_agent_can_reply(tmp_path):
+    db_path = tmp_path / "conversations.db"
+    service = ChatService(
+        conversations=ConversationStore(str(db_path)),
+        event_bus=EventBus(),
+        chat_graph=DummyGraph(),
+    )
+
+    result = await service.handle_customer_message("c1001", "我要转人工")
+    assert result["status"] == "queued"
+    conversation_id = result["conversation_id"]
+
+    reopened_store = ConversationStore(str(db_path))
+    queued = reopened_store.list_conversations(status="queued")
+    assert [row["conversation_id"] for row in queued] == [conversation_id]
+
+    service_after_refresh = ChatService(
+        conversations=reopened_store,
+        event_bus=EventBus(),
+        chat_graph=DummyGraph(),
+    )
+    claimed = await service_after_refresh.claim(conversation_id, "agent-1", "客服小美")
+    assert claimed["status"] == "human"
+    assert claimed["assigned_agent"] == "agent-1"
+
+    reply = await service_after_refresh.agent_send(conversation_id, "agent-1", "您好，我来帮您处理。")
+    assert reply["role"] == "agent"
+
+    final_store = ConversationStore(str(db_path))
+    conversation = final_store.get_conversation(conversation_id)
+    assert conversation is not None
+    assert conversation["status"] == "human"
+
+    messages = final_store.list_messages(conversation_id)
+    assert any(message["content"] == "您好，我来帮您处理。" for message in messages)
