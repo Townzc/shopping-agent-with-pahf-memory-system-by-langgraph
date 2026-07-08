@@ -244,7 +244,13 @@ class ChatService:
         existing = self.conversations.get_conversation(conversation_id)
         if existing is None:
             raise ValueError("conversation_not_found")
-        if existing["status"] not in {"queued", "human"}:
+        if existing["status"] == "human":
+            assigned = existing.get("assigned_agent")
+            if assigned and assigned != agent_id:
+                raise ValueError("conversation_assigned_to_other_agent")
+            self._agents[agent_id]["active"].add(conversation_id)
+            return existing
+        if existing["status"] != "queued":
             raise ValueError(f"conversation_not_claimable:{existing['status']}")
         conv = self.conversations.assign_agent(conversation_id, agent_id)
         self._agents[agent_id]["active"].add(conversation_id)

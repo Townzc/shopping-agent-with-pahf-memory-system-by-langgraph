@@ -65,6 +65,15 @@ function timeago(ts: number): string {
   return `${Math.floor(d / 3600)}小时前`;
 }
 
+function actionErrorMessage(error: unknown): string {
+  const text = error instanceof Error ? error.message : String(error);
+  if (text.includes("conversation_assigned_to_other_agent")) return "该会话已被其他坐席接入，请刷新列表。";
+  if (text.includes("conversation_not_claimable")) return "该会话状态已变化，暂时不能认领。";
+  if (text.includes("conversation_not_found")) return "会话不存在或已结束，请重新选择。";
+  if (text.includes("401") || text.includes("403")) return "登录状态已失效，请重新登录管理后台。";
+  return "操作失败，请稍后重试。";
+}
+
 interface AgentConsoleProps {
   adminToken: string;
   initialAgentId?: string;
@@ -89,7 +98,10 @@ export default function AgentConsole({
     online_agents: 0,
   });
   const [fb, setFb] = useState<FeedbackSummary | null>(null);
+  const [claimingId, setClaimingId] = useState("");
+  const [actionError, setActionError] = useState("");
   const bodyRef = useRef<HTMLDivElement | null>(null);
+  const claimInFlightRef = useRef(false);
   const selectedRef = useRef<string>("");
   selectedRef.current = selectedId;
 
@@ -105,8 +117,8 @@ export default function AgentConsole({
     );
   }, [agentId, agentName, filter, selectedId]);
 
-  const refreshList = useCallback(() => {
-    fetchAgentConversations(adminToken, filter).then(setConversations).catch(() => setConversations([]));
+  const refreshList = useCallback((nextFilter = filter) => {
+    fetchAgentConversations(adminToken, nextFilter).then(setConversations).catch(() => setConversations([]));
     fetchAgentStats(adminToken).then(setStats).catch(() => undefined);
     fetchFeedbackSummary().then(setFb).catch(() => undefined);
   }, [adminToken, filter]);
@@ -185,13 +197,44 @@ export default function AgentConsole({
     bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight });
   }, [context?.messages]);
 
+  useEffect(() => {
+    setActionError("");
+  }, [selectedId]);
+
   const conv = context?.conversation;
   const doClaim = async () => {
-    if (!selectedId) return;
-    await claimConversation(adminToken, selectedId, agentId, agentName);
-    setFilter("human");
-    refreshContext(selectedId);
-    refreshList();
+    const targetId = selectedId;
+    const trimmedAgentId = agentId.trim();
+    const trimmedAgentName = agentName.trim() || trimmedAgentId;
+    if (!targetId || claimInFlightRef.current) return;
+    if (!trimmedAgentId) {
+      setActionError("请先填写坐席ID。");
+      return;
+    }
+    claimInFlightRef.current = true;
+    setClaimingId(targetId);
+    setActionError("");
+    try {
+      const claimed = await claimConversation(adminToken, targetId, trimmedAgentId, trimmedAgentName);
+      setContext((current) =>
+        current && current.conversation.conversation_id === targetId
+          ? { ...current, conversation: claimed }
+          : current
+      );
+      setConversations((items) =>
+        items.map((item) => (item.conversation_id === targetId ? claimed : item))
+      );
+      setFilter("human");
+      refreshContext(targetId);
+      refreshList("human");
+    } catch (error) {
+      setActionError(actionErrorMessage(error));
+      refreshContext(targetId);
+      refreshList();
+    } finally {
+      claimInFlightRef.current = false;
+      setClaimingId("");
+    }
   };
   const doSend = async () => {
     const text = draft.trim();
@@ -302,8 +345,12 @@ export default function AgentConsole({
               </div>
               <div className="console-actions">
                 {conv.status === "queued" && (
-                  <button className="primary" onClick={doClaim}>
-                    认领接入
+                  <button
+                    className="primary"
+                    onClick={doClaim}
+                    disabled={claimingId === conv.conversation_id}
+                  >
+                    {claimingId === conv.conversation_id ? "接入中..." : "认领接入"}
                   </button>
                 )}
                 {conv.status === "human" && (
@@ -314,6 +361,7 @@ export default function AgentConsole({
                 )}
               </div>
             </div>
+            {actionError && <div className="console-alert">{actionError}</div>}
 
             <div className="console-body" ref={bodyRef}>
               {context?.messages.map((m) => (

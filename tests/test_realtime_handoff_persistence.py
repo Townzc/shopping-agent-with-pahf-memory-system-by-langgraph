@@ -46,3 +46,30 @@ async def test_handoff_request_survives_store_reopen_and_agent_can_reply(tmp_pat
 
     messages = final_store.list_messages(conversation_id)
     assert any(message["content"] == "您好，我来帮您处理。" for message in messages)
+
+
+@pytest.mark.asyncio
+async def test_claim_is_idempotent_for_same_agent(tmp_path):
+    db_path = tmp_path / "conversations.db"
+    store = ConversationStore(str(db_path))
+    service = ChatService(
+        conversations=store,
+        event_bus=EventBus(),
+        chat_graph=DummyGraph(),
+    )
+    conversation = store.get_or_create_active("c1002")
+    conversation_id = conversation["conversation_id"]
+    store.set_status(conversation_id, "queued")
+
+    first = await service.claim(conversation_id, "agent-1", "Agent One")
+    second = await service.claim(conversation_id, "agent-1", "Agent One")
+
+    assert first["status"] == "human"
+    assert second["status"] == "human"
+    assert second["assigned_agent"] == "agent-1"
+    system_messages = [
+        message
+        for message in store.list_messages(conversation_id)
+        if message["role"] == "system"
+    ]
+    assert len(system_messages) == 1
